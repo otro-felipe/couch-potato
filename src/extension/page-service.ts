@@ -218,16 +218,26 @@ export class CdpPageService {
     state: WaitState = "visible",
     timeoutMs = 30_000,
   ): Promise<{ state: WaitState }> {
-    this.requireAttached(tabId);
     const deadline = Date.now() + timeoutMs;
-    const context = await this.resolveFrameUntil(
-      tabId,
-      frameSelectors,
-      deadline,
-    );
+    let context: FrameContext | undefined;
     for (;;) {
-      const probe = await this.probe(tabId, locator, context.contextId);
-      if (this.matchesState(probe, state)) return { state };
+      try {
+        if (!this.cdp.isAttached(tabId)) {
+          await this.attach(tabId);
+          context = undefined;
+        }
+        context ??= await this.resolveFrameUntil(
+          tabId,
+          frameSelectors,
+          deadline,
+        );
+        const probe = await this.probe(tabId, locator, context.contextId);
+        if (this.matchesState(probe, state)) return { state };
+      } catch (error) {
+        if (!(error instanceof BridgeFault) || error.code !== "NOT_ATTACHED")
+          throw error;
+        context = undefined;
+      }
       if (Date.now() >= deadline) throw new BridgeFault("TIMEOUT");
       await this.delay(Math.min(100, Math.max(0, deadline - Date.now())));
     }

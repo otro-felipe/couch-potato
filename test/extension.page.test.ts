@@ -4,6 +4,7 @@ import {
   CdpPageService,
   type CdpTransport,
 } from "../src/extension/page-service.js";
+import { BridgeFault } from "../src/extension/errors.js";
 import type { Locator } from "../src/shared/protocol.js";
 
 class FakeCdp implements CdpTransport {
@@ -44,7 +45,11 @@ class FakeCdp implements CdpTransport {
     const queue = this.replies.get(method) ?? [];
     if (queue.length === 0) return {};
     const value = queue.shift();
-    if (value instanceof Error) throw value;
+    if (value instanceof Error) {
+      if (value instanceof BridgeFault && value.code === "NOT_ATTACHED")
+        this.attached.delete(tabId);
+      throw value;
+    }
     return value;
   }
 }
@@ -214,6 +219,36 @@ describe("CDP page service", () => {
       contextId: 73,
       returnByValue: true,
     });
+  });
+
+  it("reattaches and resolves a locator action again after a transient debugger detach", async () => {
+    const cdp = new FakeCdp();
+    const delay = vi.fn(async () => undefined);
+    const page = new CdpPageService(cdp, delay);
+    const attach = vi.spyOn(cdp, "attach");
+    await page.attach(24);
+    cdp.enqueue(
+      "Runtime.evaluate",
+      new BridgeFault("NOT_ATTACHED"),
+      found(),
+      found(),
+    );
+
+    await expect(page.click(24, css("a.login"), [], 1_000)).resolves.toEqual({
+      clicked: true,
+    });
+
+    expect(attach).toHaveBeenCalledTimes(2);
+    expect(delay).toHaveBeenCalledWith(100);
+    expect(
+      cdp.calls.filter(({ method }) => method === "Page.enable"),
+    ).toHaveLength(2);
+    expect(
+      cdp.calls.filter(({ method }) => method === "Runtime.enable"),
+    ).toHaveLength(2);
+    expect(
+      cdp.calls.filter(({ method }) => method === "Input.dispatchMouseEvent"),
+    ).toHaveLength(3);
   });
 
   it("maps an out-of-process iframe owner backend node to its direct child frame", async () => {
