@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Couch Potato Browser Bridge",
+  "description": "Local-only automation bridge for tabs in your existing Chrome profile.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "121",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsO2xS4gfHf9YnmBTj76JwAZFL245x+T8sO4EIvDd81KbWhjy2Tk8GAeklNUq+rzY2XBd+eXX/X+Rmiugcvb+p2WfcWTaMQ6hqQqlcZB05y1ydbSz87Fujt+UAT0yVEdvOWqo9mnF/MFX7onlkI4cneiFA8uF5XAW6TMArpSegnHBlmyNnMHdwaL49xAGs7cP6cvW7NxC/tco8PSsxlKGX97n7RJBATlm1U+GlWkA+BDEP33YJLp12SWQ5jbsNmCYOO/Ma4gMluXSOTx5A0wXpcGamA0F6UN4IqMLoYjoehqRaA/N3zkhuwfl8SpUWwa059admmVhOd0kq9nbUx1CRwIDAQAB",
+  "permissions": [
+    "debugger",
+    "nativeMessaging",
+    "tabs"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}
