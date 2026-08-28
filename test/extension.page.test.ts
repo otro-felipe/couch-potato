@@ -216,6 +216,74 @@ describe("CDP page service", () => {
     });
   });
 
+  it("retries a frame that exists before Chrome exposes its frame id and isolated world", async () => {
+    const cdp = new FakeCdp();
+    const delay = vi.fn(async () => undefined);
+    const page = new CdpPageService(cdp, delay);
+    await page.attach(17);
+    cdp.enqueue(
+      "Runtime.evaluate",
+      { result: { objectId: "early-frame" } },
+      { result: { objectId: "early-world" } },
+      { result: { objectId: "ready-frame" } },
+      found({ text: "" }),
+    );
+    cdp.enqueue(
+      "DOM.describeNode",
+      { node: {} },
+      { node: { frameId: "early-child" } },
+      { node: { frameId: "ready-child" } },
+    );
+    cdp.enqueue(
+      "DOM.getBoxModel",
+      { model: { border: [0, 0, 300, 0, 300, 200, 0, 200] } },
+      { model: { border: [0, 0, 300, 0, 300, 200, 0, 200] } },
+    );
+    cdp.enqueue("Page.createIsolatedWorld", {}, { executionContextId: 74 });
+
+    await expect(
+      page.waitFor(
+        17,
+        {
+          type: "role",
+          role: "textbox",
+          name: "Account identifier",
+          exact: true,
+        },
+        [css("iframe.remote")],
+        "visible",
+        1_000,
+      ),
+    ).resolves.toEqual({ state: "visible" });
+    expect(delay).toHaveBeenCalledTimes(2);
+    expect(
+      cdp.calls.filter(({ method }) => method === "DOM.describeNode"),
+    ).toHaveLength(3);
+  });
+
+  it("turns an unresolved transient frame into a locator timeout at its deadline", async () => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    await page.attach(18);
+    cdp.enqueue("Runtime.evaluate", { result: { objectId: "early-frame" } });
+    cdp.enqueue("DOM.describeNode", { node: {} });
+    await expect(
+      page.waitFor(18, css("input"), [css("iframe.remote")], "visible", 0),
+    ).rejects.toMatchObject({ code: "TIMEOUT" });
+  });
+
+  it("does not retry a non-transient CDP failure while resolving a frame", async () => {
+    const cdp = new FakeCdp();
+    const delay = vi.fn(async () => undefined);
+    const page = new CdpPageService(cdp, delay);
+    await page.attach(19);
+    cdp.enqueue("Runtime.evaluate", new Error("private transport detail"));
+    await expect(
+      page.waitFor(19, css("input"), [css("iframe.remote")], "visible", 1_000),
+    ).rejects.toMatchObject({ code: "CDP_ERROR" });
+    expect(delay).not.toHaveBeenCalled();
+  });
+
   it("resolves nested frames with cumulative offsets", async () => {
     const cdp = new FakeCdp();
     const page = new CdpPageService(cdp, async () => undefined);

@@ -186,8 +186,12 @@ export class CdpPageService {
     timeoutMs = 30_000,
   ): Promise<{ state: WaitState }> {
     this.requireAttached(tabId);
-    const context = await this.resolveFrame(tabId, frameSelectors);
     const deadline = Date.now() + timeoutMs;
+    const context = await this.resolveFrameUntil(
+      tabId,
+      frameSelectors,
+      deadline,
+    );
     for (;;) {
       const probe = await this.probe(tabId, locator, context.contextId);
       if (this.matchesState(probe, state)) return { state };
@@ -350,6 +354,23 @@ export class CdpPageService {
     if (contextId !== undefined) output.contextId = contextId;
     if (clip !== undefined) output.clip = clip;
     return output;
+  }
+
+  private async resolveFrameUntil(
+    tabId: number,
+    selectors: readonly Locator[],
+    deadline: number,
+  ): Promise<FrameContext> {
+    for (;;) {
+      try {
+        return await this.resolveFrame(tabId, selectors);
+      } catch (error) {
+        if (!(error instanceof BridgeFault) || error.code !== "FRAME_NOT_FOUND")
+          throw error;
+        if (Date.now() >= deadline) throw new BridgeFault("TIMEOUT");
+        await this.delay(Math.min(100, Math.max(0, deadline - Date.now())));
+      }
+    }
   }
 
   private async evaluateInContext(
