@@ -5,6 +5,7 @@ import type {
 } from "../shared/protocol.js";
 import { BridgeFault } from "./errors.js";
 import {
+  locatorActivationExpression,
   locatorBoxExpression,
   locatorObjectExpression,
   locatorProbeExpression,
@@ -286,6 +287,25 @@ export class CdpPageService {
     await this.mouse(tabId, "mousePressed", point.x, point.y, 1);
     await this.mouse(tabId, "mouseReleased", point.x, point.y, 1);
     return { clicked: true };
+  }
+
+  async activate(
+    tabId: number,
+    locator: Locator,
+    frameSelectors: readonly Locator[] = [],
+    timeoutMs = 30_000,
+  ): Promise<{ activated: true }> {
+    await this.waitFor(tabId, locator, frameSelectors, "attached", timeoutMs);
+    const context = await this.resolveFrame(tabId, frameSelectors, false);
+    const response = await this.evaluateInContext(
+      tabId,
+      locatorActivationExpression(locator),
+      context.contextId,
+      true,
+    );
+    if (resultValue(response) !== true)
+      throw new BridgeFault("LOCATOR_NOT_FOUND");
+    return { activated: true };
   }
 
   async fill(

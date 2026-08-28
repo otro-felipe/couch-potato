@@ -93,10 +93,12 @@ describe("Playwright-like client", () => {
     });
     await page.locator("#name").fill("private");
     await page.getByRole("button", { name: "Go", exact: true }).click();
+    await page.locator(".menu-action").activate({ timeoutMs: 3 });
     await page.getByText("Done").waitFor();
     const nested = opened.frameLocator("iframe.one").frameLocator("iframe.two");
     await expect(nested.content()).resolves.toBe("<html></html>");
     await nested.locator(".save").click({ timeoutMs: 2 });
+    await nested.locator(".semantic-action").activate();
     await nested.getByText("Ready", { exact: true }).textContent();
     await nested.getByRole("button").click();
     await opened.detach();
@@ -110,6 +112,16 @@ describe("Playwright-like client", () => {
       calls.find((call) => call.params?.locator?.value === ".save").params
         .frameSelectors,
     ).toHaveLength(2);
+    expect(
+      calls.find((call) => call.params?.locator?.value === ".semantic-action")
+        .params.frameSelectors,
+    ).toHaveLength(2);
+    expect(
+      calls.find((call) => call.params?.locator?.value === ".menu-action"),
+    ).toMatchObject({
+      method: "locator.activate",
+      params: { timeoutMs: 3 },
+    });
     expect(
       calls.find(
         (call) => call.method === "page.content" && call.params?.frameSelectors,

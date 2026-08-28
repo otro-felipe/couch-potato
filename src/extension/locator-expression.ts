@@ -71,3 +71,7 @@ export function locatorBoxExpression(locator: Locator): string {
 export function locatorProbeExpression(locator: Locator): string {
   return `(() => { ${resolverSource} const element = locate(${serialized(locator)}); if (!element || !element.isConnected) return { kind: "missing" }; const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); const visible = rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none" && Number(style.opacity) !== 0; return { kind: "found", visible, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, text: element.textContent }; })()`;
 }
+
+export function locatorActivationExpression(locator: Locator): string {
+  return `(() => { ${resolverSource} const element = locate(${serialized(locator)}); if (!(element instanceof HTMLElement) || !element.isConnected) return false; element.click(); return true; })()`;
+}

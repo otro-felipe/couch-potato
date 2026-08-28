@@ -734,6 +734,106 @@ describe("CDP page service", () => {
     ).toEqual({ text: "secret-value" });
   });
 
+  it("activates a freshly resolved top-level HTMLElement without CDP Input", async () => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    await page.attach(28);
+    cdp.enqueue("Runtime.evaluate", found(), { result: { value: true } });
+
+    await expect(page.activate(28, css(".action"), [], 0)).resolves.toEqual({
+      activated: true,
+    });
+
+    const evaluations = cdp.calls.filter(
+      ({ method }) => method === "Runtime.evaluate",
+    );
+    expect(evaluations).toHaveLength(2);
+    expect(evaluations.at(-1)?.params).toMatchObject({ returnByValue: true });
+    expect(
+      String(
+        (evaluations.at(-1)?.params as Record<string, unknown>).expression,
+      ),
+    ).toContain("element instanceof HTMLElement");
+    expect(
+      cdp.calls.filter(({ method }) => method.startsWith("Input.")),
+    ).toHaveLength(0);
+  });
+
+  it("activates through a nested OOPIF in its freshly resolved isolated world", async () => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    await page.attach(29);
+    cdp.enqueue(
+      "Runtime.evaluate",
+      { result: { objectId: "outer-owner-one" } },
+      { result: { objectId: "inner-owner-one" } },
+      found(),
+      { result: { objectId: "outer-owner-two" } },
+      { result: { objectId: "inner-owner-two" } },
+      { result: { value: true } },
+    );
+    cdp.enqueue(
+      "DOM.describeNode",
+      { node: { frameId: "outer" } },
+      { node: { backendNodeId: 222 } },
+      { node: { frameId: "outer" } },
+      { node: { backendNodeId: 222 } },
+    );
+    const frameTree = {
+      frameTree: {
+        frame: { id: "top" },
+        childFrames: [
+          {
+            frame: { id: "outer", parentId: "top" },
+            childFrames: [
+              { frame: { id: "inner-sibling", parentId: "outer" } },
+              { frame: { id: "inner-remote", parentId: "outer" } },
+            ],
+          },
+        ],
+      },
+    };
+    cdp.enqueue("Page.getFrameTree", frameTree, frameTree);
+    cdp.enqueue(
+      "DOM.getFrameOwner",
+      { backendNodeId: 111 },
+      { backendNodeId: 222 },
+      { backendNodeId: 111 },
+      { backendNodeId: 222 },
+    );
+    cdp.enqueue(
+      "Page.createIsolatedWorld",
+      { executionContextId: 76 },
+      { executionContextId: 77 },
+      { executionContextId: 78 },
+      { executionContextId: 79 },
+    );
+
+    await expect(
+      page.activate(
+        29,
+        css(".action"),
+        [css("iframe.outer"), css("iframe.inner")],
+        0,
+      ),
+    ).resolves.toEqual({ activated: true });
+    expect(cdp.calls.at(-1)?.params).toMatchObject({
+      contextId: 79,
+      returnByValue: true,
+    });
+  });
+
+  it("rejects activation when the freshly resolved target is not an HTMLElement", async () => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    await page.attach(30);
+    cdp.enqueue("Runtime.evaluate", found(), { result: { value: false } });
+
+    await expect(
+      page.activate(30, css(".changing"), [], 0),
+    ).rejects.toMatchObject({ code: "LOCATOR_NOT_FOUND" });
+  });
+
   it("translates frame-local click coordinates into the top-level viewport", async () => {
     const cdp = new FakeCdp();
     const page = new CdpPageService(cdp, async () => undefined);

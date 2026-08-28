@@ -226,6 +226,7 @@ const validateParams = (
             LOCATOR_STATES.has(params.state)))
       );
     case "locator.click":
+    case "locator.activate":
     case "locator.textContent":
       return validateLocator(params);
     case "locator.fill":

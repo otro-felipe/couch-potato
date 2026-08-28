@@ -43,7 +43,9 @@ socket is removed only after it has been identified as a socket owned by that us
 The extension uses `chrome.debugger` as a transport for the Chrome DevTools Protocol.
 That provides navigation, execution contexts, DOM resolution, screenshots, and Input
 events in the real browser profile. It is intentionally closer to Playwright than
-calling DOM `click()` from a content script.
+calling DOM `click()` from a content script. Physical CDP input remains the default;
+the separate `locator.activate()` operation deliberately provides DOM activation for
+components that require it.
 
 Locators are serializable values:
 
@@ -53,6 +55,8 @@ Locators are serializable values:
 
 Frame locators are represented as an ordered list of those locator values. The
 extension resolves each iframe before resolving the final locator.
+`activate()` repeats that resolution in the final top-level or isolated frame context,
+requires a connected `HTMLElement`, and returns only an allowlisted boolean result.
 
 ## Deliberate limits
 

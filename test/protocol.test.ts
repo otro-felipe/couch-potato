@@ -39,6 +39,7 @@ describe("the versioned bridge protocol", () => {
       "page.screenshot",
       "locator.waitFor",
       "locator.click",
+      "locator.activate",
       "locator.fill",
       "locator.textContent",
     ]);
@@ -141,6 +142,10 @@ describe("request validation", () => {
       { tabId: 1, locator: { type: "text", value: "Continue" }, timeoutMs: 0 },
     ],
     [
+      "locator.activate",
+      { tabId: 1, locator: { type: "css", value: ".action" }, timeoutMs: 0 },
+    ],
+    [
       "locator.fill",
       {
         tabId: 1,
@@ -210,6 +215,10 @@ describe("request validation", () => {
       { tabId: 1, locator: { type: "xpath", value: "//main" } },
     ],
     ["locator.click", { tabId: 1, locator: {} }],
+    [
+      "locator.activate",
+      { tabId: 1, locator: { type: "css", value: ".action" }, extra: true },
+    ],
     ["locator.click", { tabId: 1, locator: { type: "text", value: "" } }],
     [
       "locator.click",

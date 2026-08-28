@@ -39,6 +39,7 @@ describe("extension request controller", () => {
       screenshot: vi.fn(async () => "data"),
       waitFor: vi.fn(async () => ({ state: "visible" })),
       click: vi.fn(async () => ({ clicked: true })),
+      activate: vi.fn(async () => ({ activated: true })),
       fill: vi.fn(async () => ({ filled: true })),
       textContent: vi.fn(async () => "hello"),
       detachAll: vi.fn(async () => undefined),
@@ -117,6 +118,16 @@ describe("extension request controller", () => {
         request("locator.click", { tabId: 3, locator, timeoutMs: 2 }),
       ),
     ).toEqual({ clicked: true });
+    expect(
+      await controller.handle(
+        request("locator.activate", {
+          tabId: 3,
+          locator,
+          frameSelectors: [],
+          timeoutMs: 2,
+        }),
+      ),
+    ).toEqual({ activated: true });
     expect(
       await controller.handle(
         request("locator.fill", { tabId: 3, locator, value: "private" }),

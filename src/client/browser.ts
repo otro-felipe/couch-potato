@@ -249,6 +249,9 @@ export class Locator {
   click(options: { timeoutMs?: number } = {}): Promise<unknown> {
     return this.invoke("locator.click", options);
   }
+  activate(options: { timeoutMs?: number } = {}): Promise<unknown> {
+    return this.invoke("locator.activate", options);
+  }
   fill(value: string, options: { timeoutMs?: number } = {}): Promise<unknown> {
     return this.invoke("locator.fill", { value, ...options });
   }

@@ -3,6 +3,7 @@ import { runInNewContext } from "node:vm";
 
 import { BridgeFault, asBridgeFault } from "../src/extension/errors.js";
 import {
+  locatorActivationExpression,
   locatorObjectExpression,
   locatorProbeExpression,
 } from "../src/extension/locator-expression.js";
@@ -91,6 +92,36 @@ describe("locator expressions", () => {
       expect(result).toMatchObject({ kind: "found", visible: true });
     },
   );
+
+  it("activates only a freshly resolved connected HTMLElement without reading content", () => {
+    let clicks = 0;
+    class FakeHTMLElement {
+      isConnected = true;
+      click(): void {
+        clicks += 1;
+      }
+    }
+    const connected = new FakeHTMLElement();
+    const disconnected = new FakeHTMLElement();
+    disconnected.isConnected = false;
+    const run = (element: object | null) =>
+      runInNewContext(
+        locatorActivationExpression({ type: "css", value: ".action" }),
+        {
+          document: { querySelector: () => element },
+          HTMLElement: FakeHTMLElement,
+        },
+      );
+
+    expect(run(connected)).toBe(true);
+    expect(run(disconnected)).toBe(false);
+    expect(run({ isConnected: true, click: () => undefined })).toBe(false);
+    expect(run(null)).toBe(false);
+    expect(clicks).toBe(1);
+    expect(
+      locatorActivationExpression({ type: "css", value: ".action" }),
+    ).not.toContain("text: element.textContent");
+  });
 });
 
 describe("safe bridge faults", () => {

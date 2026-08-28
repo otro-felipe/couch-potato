@@ -13,6 +13,7 @@ export const BRIDGE_METHODS = [
   "page.screenshot",
   "locator.waitFor",
   "locator.click",
+  "locator.activate",
   "locator.fill",
   "locator.textContent",
 ] as const;
@@ -100,6 +101,7 @@ export interface BridgeParamsByMethod {
       state?: "attached" | "visible" | "hidden" | "detached";
     }>;
   "locator.click": LocatorParams;
+  "locator.activate": LocatorParams;
   "locator.fill": LocatorParams & Readonly<{ value: string }>;
   "locator.textContent": LocatorParams;
 }

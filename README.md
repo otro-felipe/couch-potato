@@ -121,13 +121,17 @@ controller.
 await page.locator("input[name=email]").fill("hello@example.com");
 await page.getByText("Continue", { exact: true }).click();
 await page.getByRole("button", { name: "Save" }).click();
+await page.locator(".menu-action").activate();
 
 const frame = page.frameLocator("iframe.checkout");
 await frame.getByRole("button", { name: "Pay" }).click();
 ```
 
-CSS, text, and role locators can be nested through multiple frame locators. Clicks
+CSS, text, and role locators can be nested through multiple frame locators. `click()`
 and text input are dispatched through the Chrome DevTools Protocol Input domain.
+`activate()` is the explicit semantic alternative: after resolving the locator again
+inside its final frame, it accepts only a connected `HTMLElement` and invokes that
+element's DOM `click()` method. It does not replace the physical-click default.
 
 ### Evaluation
 

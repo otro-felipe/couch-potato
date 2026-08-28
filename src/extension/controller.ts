@@ -74,6 +74,13 @@ export class ExtensionController {
           request.params.frameSelectors,
           request.params.timeoutMs,
         );
+      case "locator.activate":
+        return await this.pages.activate(
+          request.params.tabId,
+          request.params.locator,
+          request.params.frameSelectors,
+          request.params.timeoutMs,
+        );
       case "locator.fill":
         return await this.pages.fill(
           request.params.tabId,
