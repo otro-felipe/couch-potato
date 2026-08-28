@@ -38,6 +38,12 @@ The Unix socket is a local transport convenience for scripts. It does not expose
 TCP port. Its parent directory is accessible only to the current user, and a stale
 socket is removed only after it has been identified as a socket owned by that user.
 
+Tabs created by `browser.openPage()` are tracked as bridge-owned for the lifetime of
+the extension background process. `page.close()` first releases CDP and removes only
+that exact owned tab ID. Repeated close requests and requests for unowned IDs are
+idempotent no-ops; a failed removal is retryable only while Chrome confirms the tab
+still exists.
+
 ## Page control
 
 The extension uses `chrome.debugger` as a transport for the Chrome DevTools Protocol.

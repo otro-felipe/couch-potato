@@ -7,6 +7,7 @@ export const BRIDGE_METHODS = [
   "browser.openTab",
   "page.attach",
   "page.detach",
+  "page.close",
   "page.goto",
   "page.evaluate",
   "page.content",
@@ -78,6 +79,7 @@ export interface BridgeParamsByMethod {
   "browser.openTab": Readonly<{ url?: string; active?: boolean }>;
   "page.attach": TabParams;
   "page.detach": TabParams;
+  "page.close": TabParams;
   "page.goto": Readonly<{
     tabId: number;
     url: string;

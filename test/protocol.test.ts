@@ -33,6 +33,7 @@ describe("the versioned bridge protocol", () => {
       "browser.openTab",
       "page.attach",
       "page.detach",
+      "page.close",
       "page.goto",
       "page.evaluate",
       "page.content",
@@ -99,6 +100,7 @@ describe("request validation", () => {
     ["browser.openTab", { url: "https://example.test", active: false }],
     ["page.attach", { tabId: 1 }],
     ["page.detach", { tabId: 1 }],
+    ["page.close", { tabId: 1 }],
     [
       "page.goto",
       {
@@ -193,6 +195,7 @@ describe("request validation", () => {
     ["browser.openTab", { active: "yes" }],
     ["page.attach", { tabId: 0 }],
     ["page.detach", { tabId: 1.5 }],
+    ["page.close", { tabId: -1 }],
     ["page.goto", { tabId: 1, url: "file:///private/file" }],
     [
       "page.goto",

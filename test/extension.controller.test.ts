@@ -27,6 +27,7 @@ describe("extension request controller", () => {
       list: vi.fn(async () => [tab]),
       active: vi.fn(async () => tab),
       open: vi.fn(async () => tab),
+      close: vi.fn(async () => ({ closed: true as const })),
       requireWebTab: vi.fn(async () => tab),
     };
     const pages = {
@@ -71,6 +72,9 @@ describe("extension request controller", () => {
     expect(
       await controller.handle(request("page.detach", { tabId: 3 })),
     ).toEqual({ attached: false });
+    expect(
+      await controller.handle(request("page.close", { tabId: 3 })),
+    ).toEqual({ closed: true });
     expect(
       await controller.handle(
         request("page.goto", {
@@ -143,6 +147,41 @@ describe("extension request controller", () => {
     expect(tabs.requireWebTab).toHaveBeenCalledWith(3);
     expect(tabs.open).toHaveBeenNthCalledWith(1, tab.url, false);
     expect(tabs.open).toHaveBeenNthCalledWith(2, undefined, undefined);
+    expect(tabs.close).toHaveBeenCalledWith(3);
     expect(pages.detachAll).toHaveBeenCalledOnce();
+  });
+
+  it("still closes the owned tab when explicit debugger detach fails", async () => {
+    const detach = vi.fn(async () => {
+      throw new Error("detached externally");
+    });
+    const close = vi.fn(async () => ({ closed: true as const }));
+    const controller = new ExtensionController(
+      { close } as unknown as TabAdapter,
+      { detach } as unknown as CdpPageService,
+    );
+
+    await expect(
+      controller.handle(request("page.close", { tabId: 8 })),
+    ).resolves.toEqual({ closed: true });
+    expect(detach).toHaveBeenCalledWith(8);
+    expect(close).toHaveBeenCalledWith(8);
+  });
+
+  it("surfaces a tab-close failure after attempting debugger detach", async () => {
+    const failure = new Error("close failed");
+    const detach = vi.fn(async () => ({ attached: false as const }));
+    const close = vi.fn(async () => {
+      throw failure;
+    });
+    const controller = new ExtensionController(
+      { close } as unknown as TabAdapter,
+      { detach } as unknown as CdpPageService,
+    );
+
+    await expect(
+      controller.handle(request("page.close", { tabId: 9 })),
+    ).rejects.toBe(failure);
+    expect(detach).toHaveBeenCalledWith(9);
   });
 });

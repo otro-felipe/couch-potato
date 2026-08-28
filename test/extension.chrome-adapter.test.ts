@@ -66,6 +66,60 @@ describe("Chrome tab adapter", () => {
     expect(create).toHaveBeenCalledTimes(2);
   });
 
+  it("closes exactly an owned tab once and treats repeated close as idempotent", async () => {
+    const create = vi.fn(async () => ({
+      id: 5,
+      windowId: 1,
+      active: false,
+      url: "https://example.test",
+    }));
+    const remove = vi.fn(async () => undefined);
+    installChrome({ tabs: { create, remove } });
+    const adapter = new ChromeTabAdapter();
+    await adapter.open("https://example.test", false);
+
+    await expect(adapter.close(5)).resolves.toEqual({ closed: true });
+    await expect(adapter.close(5)).resolves.toEqual({ closed: true });
+    await expect(adapter.close(99)).resolves.toEqual({ closed: true });
+
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith(5);
+  });
+
+  it("recovers an owned close race and preserves a tab whose removal failed", async () => {
+    const create = vi.fn(async () => ({
+      id: 6,
+      windowId: 1,
+      active: false,
+      url: "https://example.test",
+    }));
+    const remove = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("already gone"))
+      .mockRejectedValueOnce(new Error("still open"))
+      .mockResolvedValueOnce(undefined);
+    const get = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("not found"))
+      .mockResolvedValueOnce({
+        id: 6,
+        windowId: 1,
+        active: false,
+        url: "https://example.test",
+      });
+    installChrome({ tabs: { create, remove, get } });
+    const adapter = new ChromeTabAdapter();
+
+    await adapter.open("https://example.test", false);
+    await expect(adapter.close(6)).resolves.toEqual({ closed: true });
+    await adapter.open("https://example.test", false);
+    await expect(adapter.close(6)).rejects.toMatchObject({
+      code: "INTERNAL_ERROR",
+    });
+    await expect(adapter.close(6)).resolves.toEqual({ closed: true });
+    expect(remove).toHaveBeenCalledTimes(3);
+  });
+
   it("reports missing, privileged, and failed tab lookups without reflecting details", async () => {
     const get = vi
       .fn()

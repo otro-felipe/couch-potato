@@ -109,11 +109,18 @@ node examples/basic.mjs
 ```js
 const tabs = await browser.listTabs();
 const page = await browser.activePage();
+const temporary = await browser.openPage("https://example.test", {
+  active: false,
+});
+await temporary.close();
 ```
 
 Calling `activePage()` attaches Couch Potato to the current tab. Chrome displays its
 standard debugging indicator while attached. Dismissing that indicator detaches the
 controller.
+`close()` is idempotent and closes only a tab created by `openPage()` through this
+bridge session. The page becomes unusable and leaves the client's page cache even if
+Chrome reports a close failure; calling `close()` again performs no second removal.
 
 ### Locators and frames
 

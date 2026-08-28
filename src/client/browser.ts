@@ -123,6 +123,8 @@ export class Page {
   readonly initialTitle: string;
   readonly initialUrl: string;
   private detached = false;
+  private closed = false;
+  private released = false;
   constructor(
     private readonly transport: BridgeTransport,
     info: TabInfo,
@@ -185,15 +187,32 @@ export class Page {
     try {
       await this.transport.request("page.detach", { tabId: this.tabId });
     } finally {
-      this.onDetach();
+      this.release();
+    }
+  }
+  async close(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    this.detached = true;
+    try {
+      await this.transport.request("page.close", { tabId: this.tabId });
+    } finally {
+      this.release();
     }
   }
   command(
     method: BridgeMethod,
     params: Record<string, unknown>,
   ): Promise<unknown> {
+    if (this.closed) return Promise.reject(new Error("Page is closed"));
     if (this.detached) return Promise.reject(new Error("Page is detached"));
     return this.transport.request(method, { tabId: this.tabId, ...params });
+  }
+
+  private release(): void {
+    if (this.released) return;
+    this.released = true;
+    this.onDetach();
   }
 }
 

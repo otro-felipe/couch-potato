@@ -178,6 +178,7 @@ const validateParams = (
       );
     case "page.attach":
     case "page.detach":
+    case "page.close":
       return validateTab(params);
     case "page.goto":
       return (

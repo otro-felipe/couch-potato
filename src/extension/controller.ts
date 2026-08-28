@@ -33,6 +33,14 @@ export class ExtensionController {
         return await this.pages.attach(request.params.tabId);
       case "page.detach":
         return await this.pages.detach(request.params.tabId);
+      case "page.close": {
+        try {
+          await this.pages.detach(request.params.tabId);
+        } catch {
+          // Removing an owned tab also releases any remaining debugger session.
+        }
+        return await this.tabs.close(request.params.tabId);
+      }
       case "page.goto":
         return await this.pages.goto(
           request.params.tabId,

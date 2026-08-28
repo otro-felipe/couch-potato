@@ -101,8 +101,11 @@ describe("Playwright-like client", () => {
     await nested.locator(".semantic-action").activate();
     await nested.getByText("Ready", { exact: true }).textContent();
     await nested.getByRole("button").click();
-    await opened.detach();
-    await opened.detach();
+    await opened.close();
+    await opened.close();
+    await expect(opened.locator(".after-close").click()).rejects.toThrow(
+      "closed",
+    );
     await browser.detachAll();
     browser.close();
     expect(
@@ -127,6 +130,11 @@ describe("Playwright-like client", () => {
         (call) => call.method === "page.content" && call.params?.frameSelectors,
       ).params.frameSelectors,
     ).toHaveLength(2);
+    expect(
+      calls.filter(
+        (call) => call.method === "page.close" && call.params.tabId === 2,
+      ),
+    ).toHaveLength(1);
   });
   it("surfaces protocol errors and invalid results", async () => {
     const errorPath = await bridge(() => ({
@@ -218,17 +226,60 @@ describe("Playwright-like client", () => {
       closedPath,
     );
   });
-  it("supports blank pages and rejects commands after detach", async () => {
-    const socketPath = await bridge((request) =>
-      request.method === "browser.openTab"
-        ? { ok: true, result: { id: 9, title: "", url: "about:blank" } }
-        : { ok: true, result: null },
+  it("supports blank pages, closes after detach, and rejects inactive commands", async () => {
+    const calls: any[] = [];
+    const socketPath = await bridge(
+      (request) => (
+        calls.push(request),
+        request.method === "browser.openTab"
+          ? { ok: true, result: { id: 9, title: "", url: "about:blank" } }
+          : { ok: true, result: null }
+      ),
     );
     const browser = await connect({ socketPath });
     const page = await browser.openPage();
     page.getByRole("button");
     await page.detach();
+    await page.detach();
     await expect(page.locator("x").click()).rejects.toThrow("detached");
+    await page.close();
+    await page.close();
+    expect(calls.filter(({ method }) => method === "page.detach")).toHaveLength(
+      1,
+    );
+    expect(calls.filter(({ method }) => method === "page.close")).toHaveLength(
+      1,
+    );
+    browser.close();
+  });
+
+  it("marks a page closed and releases its browser slot even when remote close fails", async () => {
+    const calls: any[] = [];
+    const socketPath = await bridge((request) => {
+      calls.push(request);
+      if (request.method === "browser.openTab")
+        return {
+          ok: true,
+          result: { id: 12, title: "", url: "https://example.test" },
+        };
+      if (request.method === "page.close")
+        return { ok: false, error: { code: "INTERNAL_ERROR" } };
+      return { ok: true, result: null };
+    });
+    const browser = await connect({ socketPath });
+    const first = await browser.openPage("https://example.test");
+
+    await expect(first.close()).rejects.toMatchObject({
+      code: "INTERNAL_ERROR",
+    });
+    await expect(first.close()).resolves.toBeUndefined();
+    await expect(first.evaluate("1")).rejects.toThrow("closed");
+    const second = await browser.openPage("https://example.test");
+
+    expect(second).not.toBe(first);
+    expect(calls.filter(({ method }) => method === "page.close")).toHaveLength(
+      1,
+    );
     browser.close();
   });
   it("validates status, tab and screenshot result shapes", async () => {

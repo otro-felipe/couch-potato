@@ -16,10 +16,13 @@ export interface TabAdapter {
   list(): Promise<SafeTab[]>;
   active(): Promise<SafeTab>;
   open(url?: string, active?: boolean): Promise<SafeTab>;
+  close(tabId: number): Promise<{ closed: true }>;
   requireWebTab(tabId: number): Promise<SafeTab>;
 }
 
 export class ChromeTabAdapter implements TabAdapter {
+  private readonly ownedTabs = new Set<number>();
+
   constructor(
     private readonly delay: (milliseconds: number) => Promise<void> = (
       milliseconds,
@@ -49,7 +52,24 @@ export class ChromeTabAdapter implements TabAdapter {
     const tab = await chrome.tabs.create({ active, url: target });
     const safe = this.safeTab(tab, target, true);
     if (safe === undefined) throw new BridgeFault("TAB_NOT_FOUND");
+    this.ownedTabs.add(safe.id);
     return safe;
+  }
+
+  async close(tabId: number): Promise<{ closed: true }> {
+    if (!this.ownedTabs.delete(tabId)) return { closed: true };
+    try {
+      await chrome.tabs.remove(tabId);
+    } catch {
+      try {
+        await chrome.tabs.get(tabId);
+      } catch {
+        return { closed: true };
+      }
+      this.ownedTabs.add(tabId);
+      throw new BridgeFault("INTERNAL_ERROR");
+    }
+    return { closed: true };
   }
 
   async requireWebTab(tabId: number): Promise<SafeTab> {
