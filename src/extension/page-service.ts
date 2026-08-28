@@ -31,6 +31,11 @@ type FrameContext = {
   clip?: { x: number; y: number; width: number; height: number; scale: 1 };
 };
 
+type FrameTreeNode = {
+  frameId: string;
+  children: FrameTreeNode[];
+};
+
 const fixedDelay = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
@@ -50,6 +55,34 @@ function resultValue(value: unknown): unknown {
 
 function cdpError(): BridgeFault {
   return new BridgeFault("CDP_ERROR");
+}
+
+function frameTreeNode(value: unknown): FrameTreeNode | undefined {
+  const tree = record(value);
+  const frameId = record(tree.frame).id;
+  if (typeof frameId !== "string") return undefined;
+  const rawChildren = tree.childFrames;
+  if (rawChildren !== undefined && !Array.isArray(rawChildren))
+    return undefined;
+  const children: FrameTreeNode[] = [];
+  for (const rawChild of rawChildren ?? []) {
+    const child = frameTreeNode(rawChild);
+    if (child === undefined) return undefined;
+    children.push(child);
+  }
+  return { frameId, children };
+}
+
+function findFrameTreeNode(
+  tree: FrameTreeNode,
+  frameId: string,
+): FrameTreeNode | undefined {
+  if (tree.frameId === frameId) return tree;
+  for (const child of tree.children) {
+    const found = findFrameTreeNode(child, frameId);
+    if (found !== undefined) return found;
+  }
+  return undefined;
 }
 
 export class CdpPageService {
@@ -302,6 +335,8 @@ export class CdpPageService {
   ): Promise<FrameContext> {
     let contextId: number | undefined;
     let clip: FrameContext["clip"];
+    let parentFrameId: string | undefined;
+    let frameTree: FrameTreeNode | undefined;
     for (const selector of selectors) {
       const response = await this.evaluateInContext(
         tabId,
@@ -316,8 +351,34 @@ export class CdpPageService {
         await this.send(tabId, "DOM.describeNode", { objectId }),
       );
       const node = record(description.node);
-      const frameId = node.frameId;
-      if (typeof frameId !== "string") throw new BridgeFault("FRAME_NOT_FOUND");
+      let frameId: string;
+      if (typeof node.frameId === "string") {
+        frameId = node.frameId;
+      } else {
+        const backendNodeId = node.backendNodeId;
+        if (typeof backendNodeId !== "number")
+          throw new BridgeFault("FRAME_NOT_FOUND");
+        if (frameTree === undefined) {
+          const treeResponse = record(
+            await this.send(tabId, "Page.getFrameTree"),
+          );
+          frameTree = frameTreeNode(treeResponse.frameTree);
+        }
+        if (frameTree === undefined) throw new BridgeFault("FRAME_NOT_FOUND");
+        const parent =
+          parentFrameId === undefined
+            ? frameTree
+            : findFrameTreeNode(frameTree, parentFrameId);
+        if (parent === undefined) throw new BridgeFault("FRAME_NOT_FOUND");
+        const resolvedFrameId = await this.frameIdForOwner(
+          tabId,
+          parent.children,
+          backendNodeId,
+        );
+        if (resolvedFrameId === undefined)
+          throw new BridgeFault("FRAME_NOT_FOUND");
+        frameId = resolvedFrameId;
+      }
       const box = record(
         await this.send(tabId, "DOM.getBoxModel", { objectId }),
       );
@@ -349,11 +410,28 @@ export class CdpPageService {
       if (typeof world.executionContextId !== "number")
         throw new BridgeFault("FRAME_NOT_FOUND");
       contextId = world.executionContextId;
+      parentFrameId = frameId;
     }
     const output: FrameContext = {};
     if (contextId !== undefined) output.contextId = contextId;
     if (clip !== undefined) output.clip = clip;
     return output;
+  }
+
+  private async frameIdForOwner(
+    tabId: number,
+    candidates: readonly FrameTreeNode[],
+    backendNodeId: number,
+  ): Promise<string | undefined> {
+    for (const candidate of candidates) {
+      const owner = record(
+        await this.send(tabId, "DOM.getFrameOwner", {
+          frameId: candidate.frameId,
+        }),
+      );
+      if (owner.backendNodeId === backendNodeId) return candidate.frameId;
+    }
+    return undefined;
   }
 
   private async resolveFrameUntil(

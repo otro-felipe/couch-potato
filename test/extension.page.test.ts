@@ -216,6 +216,167 @@ describe("CDP page service", () => {
     });
   });
 
+  it("maps an out-of-process iframe owner backend node to its direct child frame", async () => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    await page.attach(20);
+    cdp.enqueue(
+      "Runtime.evaluate",
+      { result: { objectId: "oopif-owner" } },
+      found({ text: "" }),
+    );
+    cdp.enqueue("DOM.describeNode", { node: { backendNodeId: 9_001 } });
+    cdp.enqueue("Page.getFrameTree", {
+      frameTree: {
+        frame: { id: "top" },
+        childFrames: [
+          { frame: { id: "unrelated", parentId: "top" } },
+          { frame: { id: "remote-child", parentId: "top" } },
+        ],
+      },
+    });
+    cdp.enqueue(
+      "DOM.getFrameOwner",
+      { backendNodeId: 8_000 },
+      { backendNodeId: 9_001 },
+    );
+    cdp.enqueue("DOM.getBoxModel", {
+      model: { border: [0, 0, 300, 0, 300, 200, 0, 200] },
+    });
+    cdp.enqueue("Page.createIsolatedWorld", { executionContextId: 75 });
+
+    await expect(
+      page.waitFor(
+        20,
+        {
+          type: "role",
+          role: "textbox",
+          name: "Account identifier",
+          exact: true,
+        },
+        [css("iframe.remote")],
+        "visible",
+        1_000,
+      ),
+    ).resolves.toEqual({ state: "visible" });
+    expect(
+      cdp.calls
+        .filter(({ method }) => method === "DOM.getFrameOwner")
+        .map(({ params }) => params),
+    ).toEqual([{ frameId: "unrelated" }, { frameId: "remote-child" }]);
+    expect(cdp.calls.at(-1)?.params).toMatchObject({ contextId: 75 });
+  });
+
+  it("scopes nested out-of-process frame-owner matching to the current parent", async () => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    await page.attach(21);
+    cdp.enqueue(
+      "Runtime.evaluate",
+      { result: { objectId: "outer-owner" } },
+      { result: { objectId: "inner-owner" } },
+      { result: { value: "<html>nested remote</html>" } },
+    );
+    cdp.enqueue(
+      "DOM.describeNode",
+      { node: { frameId: "outer", backendNodeId: 100 } },
+      { node: { backendNodeId: 222 } },
+    );
+    cdp.enqueue("Page.getFrameTree", {
+      frameTree: {
+        frame: { id: "top" },
+        childFrames: [
+          { frame: { id: "top-sibling", parentId: "top" } },
+          {
+            frame: { id: "outer", parentId: "top" },
+            childFrames: [
+              { frame: { id: "inner-sibling", parentId: "outer" } },
+              { frame: { id: "inner-remote", parentId: "outer" } },
+            ],
+          },
+        ],
+      },
+    });
+    cdp.enqueue(
+      "DOM.getFrameOwner",
+      { backendNodeId: 111 },
+      { backendNodeId: 222 },
+    );
+    cdp.enqueue(
+      "DOM.getBoxModel",
+      { model: { border: [0, 0, 300, 0, 300, 200, 0, 200] } },
+      { model: { border: [5, 6, 105, 6, 105, 56, 5, 56] } },
+    );
+    cdp.enqueue(
+      "Page.createIsolatedWorld",
+      { executionContextId: 76 },
+      { executionContextId: 77 },
+    );
+
+    await expect(
+      page.content(21, [css("iframe.outer"), css("iframe.inner")]),
+    ).resolves.toBe("<html>nested remote</html>");
+    expect(
+      cdp.calls
+        .filter(({ method }) => method === "DOM.getFrameOwner")
+        .map(({ params }) => params),
+    ).toEqual([{ frameId: "inner-sibling" }, { frameId: "inner-remote" }]);
+  });
+
+  it.each([
+    [{ frameTree: {} }, []],
+    [{ frameTree: { frame: { id: "top" }, childFrames: {} } }, []],
+    [{ frameTree: { frame: { id: "top" }, childFrames: [{}] } }, []],
+    [{ frameTree: { frame: { id: "top" } } }, []],
+    [
+      {
+        frameTree: {
+          frame: { id: "top" },
+          childFrames: [{ frame: { id: "other", parentId: "top" } }],
+        },
+      },
+      [{ backendNodeId: 999 }],
+    ],
+  ])(
+    "rejects malformed or unmatched OOPIF metadata %#",
+    async (tree, owners) => {
+      const cdp = new FakeCdp();
+      const page = new CdpPageService(cdp, async () => undefined);
+      await page.attach(22);
+      cdp.enqueue("Runtime.evaluate", { result: { objectId: "oopif-owner" } });
+      cdp.enqueue("DOM.describeNode", { node: { backendNodeId: 123 } });
+      cdp.enqueue("Page.getFrameTree", tree);
+      if (owners.length > 0) cdp.enqueue("DOM.getFrameOwner", ...owners);
+      await expect(
+        page.content(22, [css("iframe.remote")]),
+      ).rejects.toMatchObject({ code: "FRAME_NOT_FOUND" });
+    },
+  );
+
+  it("rejects a nested OOPIF whose current parent disappeared from the frame tree", async () => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    await page.attach(23);
+    cdp.enqueue(
+      "Runtime.evaluate",
+      { result: { objectId: "outer-owner" } },
+      { result: { objectId: "inner-owner" } },
+    );
+    cdp.enqueue(
+      "DOM.describeNode",
+      { node: { frameId: "disappeared-parent" } },
+      { node: { backendNodeId: 222 } },
+    );
+    cdp.enqueue("DOM.getBoxModel", {});
+    cdp.enqueue("Page.createIsolatedWorld", { executionContextId: 80 });
+    cdp.enqueue("Page.getFrameTree", {
+      frameTree: { frame: { id: "top" }, childFrames: [] },
+    });
+    await expect(
+      page.content(23, [css("iframe.outer"), css("iframe.inner")]),
+    ).rejects.toMatchObject({ code: "FRAME_NOT_FOUND" });
+  });
+
   it("retries a frame that exists before Chrome exposes its frame id and isolated world", async () => {
     const cdp = new FakeCdp();
     const delay = vi.fn(async () => undefined);
