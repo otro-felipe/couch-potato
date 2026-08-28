@@ -1,6 +1,11 @@
-import type { JsonValue, Locator } from "../shared/protocol.js";
+import type {
+  BridgeErrorCode,
+  JsonValue,
+  Locator,
+} from "../shared/protocol.js";
 import { BridgeFault } from "./errors.js";
 import {
+  locatorBoxExpression,
   locatorObjectExpression,
   locatorProbeExpression,
 } from "./locator-expression.js";
@@ -86,6 +91,9 @@ function findFrameTreeNode(
 }
 
 export class CdpPageService {
+  private readonly authorizedTabs = new Set<number>();
+  private lastCdpFailure?: { method: string; code: BridgeErrorCode };
+
   constructor(
     private readonly cdp: CdpTransport,
     private readonly delay: (
@@ -98,8 +106,10 @@ export class CdpPageService {
     try {
       await this.cdp.send(tabId, "Page.enable");
       await this.cdp.send(tabId, "Runtime.enable");
+      this.authorizedTabs.add(tabId);
       return { attached: true };
     } catch (error) {
+      this.authorizedTabs.delete(tabId);
       try {
         await this.cdp.detach(tabId);
       } catch {
@@ -111,21 +121,32 @@ export class CdpPageService {
   }
 
   async detach(tabId: number): Promise<{ attached: false }> {
-    this.requireAttached(tabId);
-    await this.cdp.detach(tabId);
+    if (!this.authorizedTabs.delete(tabId))
+      throw new BridgeFault("NOT_ATTACHED");
+    if (this.cdp.isAttached(tabId)) await this.cdp.detach(tabId);
     return { attached: false };
   }
 
   async detachAll(): Promise<void> {
+    this.authorizedTabs.clear();
     await this.cdp.detachAll();
   }
 
-  status(): { attachedTabIds: number[] } {
-    return {
+  status(): {
+    attachedTabIds: number[];
+    lastCdpFailure?: { method: string; code: BridgeErrorCode };
+  } {
+    const status: {
+      attachedTabIds: number[];
+      lastCdpFailure?: { method: string; code: BridgeErrorCode };
+    } = {
       attachedTabIds: this.cdp
         .attachedTabIds()
         .sort((left, right) => left - right),
     };
+    if (this.lastCdpFailure !== undefined)
+      status.lastCdpFailure = this.lastCdpFailure;
+    return status;
   }
 
   async goto(
@@ -165,7 +186,7 @@ export class CdpPageService {
     frameSelectors: readonly Locator[] = [],
   ): Promise<string> {
     this.requireAttached(tabId);
-    const frame = await this.resolveFrame(tabId, frameSelectors);
+    const frame = await this.resolveFrame(tabId, frameSelectors, false);
     const response = await this.evaluateInContext(
       tabId,
       "document.documentElement.outerHTML",
@@ -185,7 +206,11 @@ export class CdpPageService {
     fullPage = false,
   ): Promise<string> {
     this.requireAttached(tabId);
-    const frame = await this.resolveFrame(tabId, frameSelectors);
+    const frame = await this.resolveFrame(
+      tabId,
+      frameSelectors,
+      frameSelectors.length > 0,
+    );
     let clip = frame.clip;
     if (fullPage && frameSelectors.length === 0) {
       const metrics = record(await this.send(tabId, "Page.getLayoutMetrics"));
@@ -221,6 +246,8 @@ export class CdpPageService {
     const deadline = Date.now() + timeoutMs;
     let context: FrameContext | undefined;
     for (;;) {
+      if (!this.cdp.isAttached(tabId) && !this.authorizedTabs.has(tabId))
+        throw new BridgeFault("NOT_ATTACHED");
       try {
         if (!this.cdp.isAttached(tabId)) {
           await this.attach(tabId);
@@ -292,7 +319,7 @@ export class CdpPageService {
     timeoutMs = 30_000,
   ): Promise<string | null> {
     await this.waitFor(tabId, locator, frameSelectors, "attached", timeoutMs);
-    const context = await this.resolveFrame(tabId, frameSelectors);
+    const context = await this.resolveFrame(tabId, frameSelectors, false);
     const probe = await this.probe(tabId, locator, context.contextId);
     if (probe.kind === "missing") throw new BridgeFault("LOCATOR_NOT_FOUND");
     return probe.text;
@@ -310,8 +337,9 @@ export class CdpPageService {
     try {
       return await this.cdp.send(tabId, method, params);
     } catch (error) {
-      if (error instanceof BridgeFault) throw error;
-      throw cdpError();
+      const fault = error instanceof BridgeFault ? error : cdpError();
+      this.lastCdpFailure = { method, code: fault.code };
+      throw fault;
     }
   }
 
@@ -342,6 +370,7 @@ export class CdpPageService {
   private async resolveFrame(
     tabId: number,
     selectors: readonly Locator[],
+    includeClip: boolean,
   ): Promise<FrameContext> {
     let contextId: number | undefined;
     let clip: FrameContext["clip"];
@@ -361,11 +390,11 @@ export class CdpPageService {
         await this.send(tabId, "DOM.describeNode", { objectId }),
       );
       const node = record(description.node);
+      const backendNodeId = node.backendNodeId;
       let frameId: string;
       if (typeof node.frameId === "string") {
         frameId = node.frameId;
       } else {
-        const backendNodeId = node.backendNodeId;
         if (typeof backendNodeId !== "number")
           throw new BridgeFault("FRAME_NOT_FOUND");
         if (frameTree === undefined) {
@@ -389,24 +418,35 @@ export class CdpPageService {
           throw new BridgeFault("FRAME_NOT_FOUND");
         frameId = resolvedFrameId;
       }
-      const box = record(
-        await this.send(tabId, "DOM.getBoxModel", { objectId }),
-      );
-      const border = record(box.model).border;
-      if (
-        Array.isArray(border) &&
-        border.length === 8 &&
-        border.every((entry) => typeof entry === "number")
-      ) {
-        const xs = [border[0], border[2], border[4], border[6]] as number[];
-        const ys = [border[1], border[3], border[5], border[7]] as number[];
-        const x = Math.min(...xs) + (clip?.x ?? 0);
-        const y = Math.min(...ys) + (clip?.y ?? 0);
+      if (includeClip) {
+        const bounds = record(
+          resultValue(
+            await this.evaluateInContext(
+              tabId,
+              locatorBoxExpression(selector),
+              contextId,
+              true,
+            ),
+          ),
+        );
+        if (
+          typeof bounds.x !== "number" ||
+          typeof bounds.y !== "number" ||
+          typeof bounds.width !== "number" ||
+          typeof bounds.height !== "number" ||
+          !Number.isFinite(bounds.x) ||
+          !Number.isFinite(bounds.y) ||
+          !Number.isFinite(bounds.width) ||
+          !Number.isFinite(bounds.height) ||
+          bounds.width < 0 ||
+          bounds.height < 0
+        )
+          throw new BridgeFault("FRAME_NOT_FOUND");
         clip = {
-          x,
-          y,
-          width: Math.max(...xs) - Math.min(...xs),
-          height: Math.max(...ys) - Math.min(...ys),
+          x: bounds.x + (clip?.x ?? 0),
+          y: bounds.y + (clip?.y ?? 0),
+          width: bounds.width,
+          height: bounds.height,
           scale: 1,
         };
       }
@@ -451,7 +491,7 @@ export class CdpPageService {
   ): Promise<FrameContext> {
     for (;;) {
       try {
-        return await this.resolveFrame(tabId, selectors);
+        return await this.resolveFrame(tabId, selectors, false);
       } catch (error) {
         if (!(error instanceof BridgeFault) || error.code !== "FRAME_NOT_FOUND")
           throw error;
@@ -508,7 +548,7 @@ export class CdpPageService {
     timeoutMs: number,
   ): Promise<{ x: number; y: number }> {
     await this.waitFor(tabId, locator, frames, "visible", timeoutMs);
-    const context = await this.resolveFrame(tabId, frames);
+    const context = await this.resolveFrame(tabId, frames, true);
     const probe = await this.probe(tabId, locator, context.contextId);
     if (probe.kind === "missing" || !probe.visible)
       throw new BridgeFault("LOCATOR_NOT_FOUND");

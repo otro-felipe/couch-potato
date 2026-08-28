@@ -73,12 +73,33 @@ describe("CDP page service", () => {
     const cdp = new FakeCdp();
     const page = new CdpPageService(cdp, async () => undefined);
 
+    await expect(page.detach(7)).rejects.toMatchObject({
+      code: "NOT_ATTACHED",
+    });
     await page.attach(7);
     expect(page.status()).toEqual({ attachedTabIds: [7] });
     await page.detach(7);
     await page.attach(8);
     await page.detachAll();
     expect(page.status()).toEqual({ attachedTabIds: [] });
+  });
+
+  it("reports only the failed CDP method and allowlisted code", async () => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    await page.attach(25);
+    cdp.enqueue("Runtime.evaluate", new Error("private browser details"));
+
+    await expect(
+      page.waitFor(25, css("main"), [], "visible", 1_000),
+    ).rejects.toMatchObject({ code: "CDP_ERROR" });
+    expect(page.status()).toEqual({
+      attachedTabIds: [25],
+      lastCdpFailure: { method: "Runtime.evaluate", code: "CDP_ERROR" },
+    });
+    expect(JSON.stringify(page.status())).not.toContain(
+      "private browser details",
+    );
   });
 
   it("cleans up debugger attachment when domain enable fails", async () => {
@@ -251,6 +272,17 @@ describe("CDP page service", () => {
     ).toHaveLength(3);
   });
 
+  it("never auto-attaches a tab that was not explicitly authorized", async () => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    const attach = vi.spyOn(cdp, "attach");
+
+    await expect(
+      page.waitFor(26, css("main"), [], "visible", 1_000),
+    ).rejects.toMatchObject({ code: "NOT_ATTACHED" });
+    expect(attach).not.toHaveBeenCalled();
+  });
+
   it("maps an out-of-process iframe owner backend node to its direct child frame", async () => {
     const cdp = new FakeCdp();
     const page = new CdpPageService(cdp, async () => undefined);
@@ -299,6 +331,9 @@ describe("CDP page service", () => {
         .filter(({ method }) => method === "DOM.getFrameOwner")
         .map(({ params }) => params),
     ).toEqual([{ frameId: "unrelated" }, { frameId: "remote-child" }]);
+    expect(
+      cdp.calls.filter(({ method }) => method === "DOM.getBoxModel"),
+    ).toHaveLength(0);
     expect(cdp.calls.at(-1)?.params).toMatchObject({ contextId: 75 });
   });
 
@@ -356,6 +391,9 @@ describe("CDP page service", () => {
         .filter(({ method }) => method === "DOM.getFrameOwner")
         .map(({ params }) => params),
     ).toEqual([{ frameId: "inner-sibling" }, { frameId: "inner-remote" }]);
+    expect(
+      cdp.calls.filter(({ method }) => method === "DOM.getBoxModel"),
+    ).toHaveLength(0);
   });
 
   it.each([
@@ -487,8 +525,9 @@ describe("CDP page service", () => {
     cdp.enqueue(
       "Runtime.evaluate",
       { result: { objectId: "outer" } },
+      { result: { value: { x: 5, y: 6, width: 100, height: 50 } } },
       { result: { objectId: "inner" } },
-      { result: { value: "<html>nested</html>" } },
+      { result: { value: { x: 7, y: 8, width: 40, height: 20 } } },
     );
     cdp.enqueue(
       "DOM.describeNode",
@@ -496,19 +535,17 @@ describe("CDP page service", () => {
       { node: { frameId: "inner-frame" } },
     );
     cdp.enqueue(
-      "DOM.getBoxModel",
-      { model: { border: [5, 6, 105, 6, 105, 56, 5, 56] } },
-      { model: { border: [7, 8, 47, 8, 47, 28, 7, 28] } },
-    );
-    cdp.enqueue(
       "Page.createIsolatedWorld",
       { executionContextId: 20 },
       { executionContextId: 21 },
     );
+    cdp.enqueue("Page.captureScreenshot", { data: "nested" });
     await expect(
-      page.content(13, [css("iframe.outer"), css("iframe.inner")]),
-    ).resolves.toBe("<html>nested</html>");
-    expect(cdp.calls.at(-1)?.params).toMatchObject({ contextId: 21 });
+      page.screenshot(13, [css("iframe.outer"), css("iframe.inner")]),
+    ).resolves.toBe("nested");
+    expect(cdp.calls.at(-1)?.params).toMatchObject({
+      clip: { x: 12, y: 14, width: 40, height: 20, scale: 1 },
+    });
   });
 
   it("returns an explicit frame error for missing or non-frame elements", async () => {
@@ -527,7 +564,11 @@ describe("CDP page service", () => {
     await expect(page.content(4, [css("div")])).rejects.toMatchObject({
       code: "FRAME_NOT_FOUND",
     });
-    cdp.enqueue("Runtime.evaluate", { result: { objectId: "frame" } });
+    cdp.enqueue(
+      "Runtime.evaluate",
+      { result: { objectId: "frame" } },
+      { result: { value: { x: 5, y: 6, width: 100, height: 50 } } },
+    );
     cdp.enqueue("DOM.describeNode", { node: { frameId: "child" } });
     cdp.enqueue("DOM.getBoxModel", {});
     cdp.enqueue("Page.createIsolatedWorld", {});
@@ -549,7 +590,11 @@ describe("CDP page service", () => {
     cdp.enqueue("Page.getLayoutMetrics", {
       cssContentSize: { width: 900, height: 1200 },
     });
-    cdp.enqueue("Runtime.evaluate", { result: { objectId: "frame" } });
+    cdp.enqueue(
+      "Runtime.evaluate",
+      { result: { objectId: "frame" } },
+      { result: { value: { x: 5, y: 6, width: 100, height: 50 } } },
+    );
     cdp.enqueue("DOM.describeNode", { node: { frameId: "frame-id" } });
     cdp.enqueue("DOM.getBoxModel", {
       model: { border: [5, 6, 105, 6, 105, 56, 5, 56] },
@@ -575,6 +620,34 @@ describe("CDP page service", () => {
     cdp.enqueue("Page.captureScreenshot", {});
     await expect(page.screenshot(5)).rejects.toMatchObject({
       code: "CDP_ERROR",
+    });
+  });
+
+  it.each([
+    {},
+    { x: "bad", y: 0, width: 1, height: 1 },
+    { x: 0, y: "bad", width: 1, height: 1 },
+    { x: 0, y: 0, width: "bad", height: 1 },
+    { x: 0, y: 0, width: 1, height: "bad" },
+    { x: Number.NaN, y: 0, width: 1, height: 1 },
+    { x: 0, y: Number.POSITIVE_INFINITY, width: 1, height: 1 },
+    { x: 0, y: 0, width: Number.NaN, height: 1 },
+    { x: 0, y: 0, width: 1, height: Number.NEGATIVE_INFINITY },
+    { x: 0, y: 0, width: -1, height: 1 },
+    { x: 0, y: 0, width: 1, height: -1 },
+  ])("rejects malformed frame geometry %#", async (bounds) => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    await page.attach(27);
+    cdp.enqueue(
+      "Runtime.evaluate",
+      { result: { objectId: "frame" } },
+      { result: { value: bounds } },
+    );
+    cdp.enqueue("DOM.describeNode", { node: { frameId: "child" } });
+
+    await expect(page.screenshot(27, [css("iframe")])).rejects.toMatchObject({
+      code: "FRAME_NOT_FOUND",
     });
   });
 
@@ -670,6 +743,7 @@ describe("CDP page service", () => {
       { result: { objectId: "frame-one" } },
       found(),
       { result: { objectId: "frame-two" } },
+      { result: { value: { x: 5, y: 6, width: 100, height: 50 } } },
       found(),
     );
     cdp.enqueue(

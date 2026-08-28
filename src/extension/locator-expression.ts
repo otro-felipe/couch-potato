@@ -64,6 +64,10 @@ export function locatorObjectExpression(locator: Locator): string {
   return `(() => { ${resolverSource} return locate(${serialized(locator)}); })()`;
 }
 
+export function locatorBoxExpression(locator: Locator): string {
+  return `(() => { ${resolverSource} const element = locate(${serialized(locator)}); if (!element || !element.isConnected) return null; const rect = element.getBoundingClientRect(); return { x: rect.left, y: rect.top, width: rect.width, height: rect.height }; })()`;
+}
+
 export function locatorProbeExpression(locator: Locator): string {
   return `(() => { ${resolverSource} const element = locate(${serialized(locator)}); if (!element || !element.isConnected) return { kind: "missing" }; const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); const visible = rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none" && Number(style.opacity) !== 0; return { kind: "found", visible, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, text: element.textContent }; })()`;
 }
