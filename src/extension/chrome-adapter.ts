@@ -20,6 +20,12 @@ export interface TabAdapter {
 }
 
 export class ChromeTabAdapter implements TabAdapter {
+  constructor(
+    private readonly delay: (milliseconds: number) => Promise<void> = (
+      milliseconds,
+    ) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  ) {}
+
   async list(): Promise<SafeTab[]> {
     const tabs = await chrome.tabs.query({});
     return tabs.flatMap((tab) => {
@@ -47,6 +53,13 @@ export class ChromeTabAdapter implements TabAdapter {
   }
 
   async requireWebTab(tabId: number): Promise<SafeTab> {
+    return this.requireWebTabWithRetries(tabId, 10);
+  }
+
+  private async requireWebTabWithRetries(
+    tabId: number,
+    attemptsLeft: number,
+  ): Promise<SafeTab> {
     try {
       const tab = await chrome.tabs.get(tabId);
       const safe = this.safeTab(tab);
@@ -54,7 +67,9 @@ export class ChromeTabAdapter implements TabAdapter {
       return safe;
     } catch (error) {
       if (error instanceof BridgeFault) throw error;
-      throw new BridgeFault("TAB_NOT_FOUND");
+      if (attemptsLeft === 1) throw new BridgeFault("TAB_NOT_FOUND");
+      await this.delay(25);
+      return this.requireWebTabWithRetries(tabId, attemptsLeft - 1);
     }
   }
 

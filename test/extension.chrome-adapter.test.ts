@@ -75,7 +75,7 @@ describe("Chrome tab adapter", () => {
         windowId: 1,
         url: "file:///private",
       })
-      .mockRejectedValueOnce(new Error("private browser failure"));
+      .mockRejectedValue(new Error("private browser failure"));
     installChrome({
       tabs: {
         query: vi.fn(async () => []),
@@ -87,7 +87,7 @@ describe("Chrome tab adapter", () => {
         get,
       },
     });
-    const adapter = new ChromeTabAdapter();
+    const adapter = new ChromeTabAdapter(async () => undefined);
     await expect(adapter.active()).rejects.toMatchObject({
       code: "TAB_NOT_FOUND",
     });
@@ -107,6 +107,24 @@ describe("Chrome tab adapter", () => {
       url: "https://example.test",
     });
     await expect(adapter.requireWebTab(3)).resolves.toMatchObject({ id: 3 });
+  });
+
+  it("retries a transient lookup while Chrome finishes registering a new tab", async () => {
+    vi.useFakeTimers();
+    const get = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("not registered yet"))
+      .mockResolvedValueOnce({
+        id: 9,
+        active: true,
+        windowId: 1,
+        url: "https://example.test",
+      });
+    installChrome({ tabs: { get } });
+    const pending = new ChromeTabAdapter().requireWebTab(9);
+    await vi.advanceTimersByTimeAsync(25);
+    await expect(pending).resolves.toMatchObject({ id: 9 });
+    vi.useRealTimers();
   });
 });
 

@@ -1,11 +1,23 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
 import { connect, type Browser } from "./index.js";
+
+type BrowserConnector = () => Promise<Browser>;
+type ConnectBrowser = (options: { timeoutMs: number }) => Promise<Browser>;
+
+export function createCliConnector(
+  connectBrowser: ConnectBrowser = connect,
+): BrowserConnector {
+  return () => connectBrowser({ timeoutMs: 5_000 });
+}
+
+const defaultConnector = createCliConnector();
+
 export async function runCli(
   command: string | undefined,
   write: (line: string) => unknown = (line) =>
     process.stdout.write(`${line}\n`),
-  connector: () => Promise<Browser> = () => connect({ timeoutMs: 5_000 }),
+  connector: BrowserConnector = defaultConnector,
 ): Promise<number> {
   if (
     command !== "status" &&

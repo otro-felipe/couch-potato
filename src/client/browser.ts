@@ -47,6 +47,11 @@ function parseTabs(value: unknown): TabInfo[] {
     throw new Error("Bridge returned an invalid tab list");
   return value.map(parseTab);
 }
+function parseContent(value: unknown): string {
+  if (typeof value !== "string")
+    throw new Error("Bridge returned invalid page content");
+  return value;
+}
 function role(
   roleName: string,
   options: { name?: string; exact?: boolean },
@@ -141,8 +146,8 @@ export class Page {
     if (arg !== undefined) params.arg = arg;
     return this.command("page.evaluate", params);
   }
-  content(): Promise<string> {
-    return this.command("page.content", {}) as Promise<string>;
+  async content(): Promise<string> {
+    return parseContent(await this.command("page.content", {}));
   }
   async screenshot(
     options: {
@@ -202,6 +207,13 @@ export class FrameLocator {
       ...this.frames,
       { type: "css", value: selector },
     ]);
+  }
+  async content(): Promise<string> {
+    return parseContent(
+      await this.page.command("page.content", {
+        frameSelectors: this.frames,
+      }),
+    );
   }
   locator(selector: string): Locator {
     return new Locator(

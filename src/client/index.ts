@@ -8,10 +8,18 @@ export interface ConnectOptions {
   socketPath?: string;
   timeoutMs?: number;
 }
+
+export function resolveSocketPath(
+  options: ConnectOptions,
+  home?: string,
+): string {
+  return options.socketPath ?? defaultSocketEndpoint(home).socketPath;
+}
+
 export async function connect(options: ConnectOptions = {}): Promise<Browser> {
   return new Browser(
     await BridgeTransport.connect(
-      options.socketPath ?? defaultSocketEndpoint().socketPath,
+      resolveSocketPath(options),
       options.timeoutMs,
     ),
   );

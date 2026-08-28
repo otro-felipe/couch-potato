@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { connect } from "../src/client/index.js";
-import { runCli } from "../src/client/cli.js";
+import { connect, resolveSocketPath } from "../src/client/index.js";
+import { createCliConnector, runCli } from "../src/client/cli.js";
 import type { Browser } from "../src/client/browser.js";
 
 const servers: net.Server[] = [];
@@ -66,6 +66,8 @@ describe("Playwright-like client", () => {
           result: { id: 2, title: "B", url: request.params.url },
         };
       if (method === "page.screenshot") return { ok: true, result: "cGl4ZWxz" };
+      if (method === "page.content")
+        return { ok: true, result: "<html></html>" };
       if (method === "bridge.status")
         return { ok: true, result: { attachedTabIds: [1] } };
       if (method === "locator.textContent")
@@ -93,6 +95,7 @@ describe("Playwright-like client", () => {
     await page.getByRole("button", { name: "Go", exact: true }).click();
     await page.getByText("Done").waitFor();
     const nested = opened.frameLocator("iframe.one").frameLocator("iframe.two");
+    await expect(nested.content()).resolves.toBe("<html></html>");
     await nested.locator(".save").click({ timeoutMs: 2 });
     await nested.getByText("Ready", { exact: true }).textContent();
     await nested.getByRole("button").click();
@@ -106,6 +109,11 @@ describe("Playwright-like client", () => {
     expect(
       calls.find((call) => call.params?.locator?.value === ".save").params
         .frameSelectors,
+    ).toHaveLength(2);
+    expect(
+      calls.find(
+        (call) => call.method === "page.content" && call.params?.frameSelectors,
+      ).params.frameSelectors,
     ).toHaveLength(2);
   });
   it("surfaces protocol errors and invalid results", async () => {
@@ -185,7 +193,18 @@ describe("Playwright-like client", () => {
     await expect(
       connect({ socketPath: path.join(root, "missing.sock") }),
     ).rejects.toBeDefined();
-    await expect(connect()).rejects.toBeDefined();
+    expect(resolveSocketPath({}, root)).toBe(
+      path.join(
+        root,
+        "Library",
+        "Application Support",
+        "Couch Potato",
+        "bridge.sock",
+      ),
+    );
+    expect(resolveSocketPath({ socketPath: closedPath }, root)).toBe(
+      closedPath,
+    );
   });
   it("supports blank pages and rejects commands after detach", async () => {
     const socketPath = await bridge((request) =>
@@ -245,6 +264,10 @@ describe("Playwright-like client", () => {
     const second = await connect({ socketPath: pagePath });
     const page = await second.openPage();
     await expect(page.screenshot()).rejects.toThrow("invalid screenshot");
+    await expect(page.content()).rejects.toThrow("invalid page content");
+    await expect(page.frameLocator("iframe").content()).rejects.toThrow(
+      "invalid page content",
+    );
     second.close();
     browser.close();
   });
@@ -260,6 +283,10 @@ describe("safe CLI", () => {
       detachAll: vi.fn().mockResolvedValue(undefined),
       close: vi.fn(),
     } as unknown as Browser;
+    const connectBrowser = vi.fn().mockResolvedValue(browser);
+    await expect(createCliConnector(connectBrowser)()).resolves.toBe(browser);
+    expect(connectBrowser).toHaveBeenCalledWith({ timeoutMs: 5_000 });
+    createCliConnector();
     expect(
       await runCli(
         "status",
@@ -320,6 +347,14 @@ describe("safe CLI", () => {
     const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     expect(await runCli("unknown")).toBe(2);
     stdout.mockRestore();
-    expect(await runCli("status", (line) => lines.push(line))).toBe(1);
+    expect(
+      await runCli(
+        "status",
+        (line) => lines.push(line),
+        async () => {
+          throw new Error("unavailable");
+        },
+      ),
+    ).toBe(1);
   });
 });
