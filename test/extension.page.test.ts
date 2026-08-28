@@ -176,6 +176,46 @@ describe("CDP page service", () => {
     });
   });
 
+  it("runs a role locator in the isolated execution context of a cross-origin frame", async () => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    await page.attach(16);
+    cdp.enqueue(
+      "Runtime.evaluate",
+      { result: { objectId: "cross-origin-frame" } },
+      found({ text: "" }),
+    );
+    cdp.enqueue("DOM.describeNode", { node: { frameId: "remote-child" } });
+    cdp.enqueue("DOM.getBoxModel", {
+      model: { border: [0, 0, 300, 0, 300, 200, 0, 200] },
+    });
+    cdp.enqueue("Page.createIsolatedWorld", { executionContextId: 73 });
+
+    await expect(
+      page.waitFor(
+        16,
+        {
+          type: "role",
+          role: "textbox",
+          name: "Account identifier",
+          exact: true,
+        },
+        [css("iframe.remote")],
+        "visible",
+        0,
+      ),
+    ).resolves.toEqual({ state: "visible" });
+
+    const evaluations = cdp.calls.filter(
+      ({ method }) => method === "Runtime.evaluate",
+    );
+    expect(evaluations[0]?.params).not.toHaveProperty("contextId");
+    expect(evaluations[1]?.params).toMatchObject({
+      contextId: 73,
+      returnByValue: true,
+    });
+  });
+
   it("resolves nested frames with cumulative offsets", async () => {
     const cdp = new FakeCdp();
     const page = new CdpPageService(cdp, async () => undefined);

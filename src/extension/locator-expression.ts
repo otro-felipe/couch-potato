@@ -9,6 +9,7 @@ const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
 const implicitRole = (element) => {
   const tag = element.tagName.toLowerCase();
   if (tag === "button") return "button";
+  if (/^h[1-6]$/.test(tag)) return "heading";
   if (tag === "a" && element.hasAttribute("href")) return "link";
   if (tag === "textarea") return "textbox";
   if (tag === "select") return "combobox";
@@ -21,11 +22,29 @@ const implicitRole = (element) => {
   }
   return "";
 };
-const accessibleName = (element) => normalize(
-  element.getAttribute("aria-label") ||
-  (element.getAttribute("aria-labelledby") || "").split(/\s+/).map((id) => document.getElementById(id)?.textContent || "").join(" ") ||
-  element.getAttribute("alt") || element.getAttribute("title") || element.value || element.textContent
-);
+const accessibleName = (element) => {
+  const labelledBy = (element.getAttribute("aria-labelledby") || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((id) => document.getElementById(id)?.textContent || "")
+    .join(" ");
+  const associatedLabels = Array.from(element.labels || [])
+    .map((label) => label.textContent || "")
+    .join(" ");
+  const tag = element.tagName.toLowerCase();
+  const type = (element.getAttribute("type") || "").toLowerCase();
+  const inputButtonValue = tag === "input" && ["button", "submit", "reset"].includes(type) ? element.value : "";
+  return normalize(
+    labelledBy ||
+    element.getAttribute("aria-label") ||
+    associatedLabels ||
+    element.getAttribute("placeholder") ||
+    element.getAttribute("alt") ||
+    element.getAttribute("title") ||
+    inputButtonValue ||
+    element.textContent
+  );
+};
 const matches = (actual, expected, exact) => exact ? actual === expected : actual.toLowerCase().includes(expected.toLowerCase());
 const locate = (locator) => {
   if (locator.type === "css") return document.querySelector(locator.value);
