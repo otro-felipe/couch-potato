@@ -8,14 +8,21 @@ import type { BridgeRequest } from "../src/shared/protocol.js";
 const request = <M extends BridgeRequest["method"]>(
   method: M,
   params: Extract<BridgeRequest, { method: M }>["params"],
-): Extract<BridgeRequest, { method: M }> => ({ protocol: "1", id: method, method, params }) as Extract<
-  BridgeRequest,
-  { method: M }
->;
+): Extract<BridgeRequest, { method: M }> =>
+  ({ protocol: "1", id: method, method, params }) as Extract<
+    BridgeRequest,
+    { method: M }
+  >;
 
 describe("extension request controller", () => {
   it("routes every allowlisted method to its narrow service", async () => {
-    const tab = { id: 3, active: true, windowId: 1, url: "https://example.com", title: "Example" };
+    const tab = {
+      id: 3,
+      active: true,
+      windowId: 1,
+      url: "https://example.com",
+      title: "Example",
+    };
     const tabs: TabAdapter = {
       list: vi.fn(async () => [tab]),
       active: vi.fn(async () => tab),
@@ -39,33 +46,87 @@ describe("extension request controller", () => {
     const controller = new ExtensionController(tabs, pages);
     const locator = { type: "css", value: "main" } as const;
 
-    expect(await controller.handle(request("bridge.status", {}))).toEqual({ protocol: "1", attachedTabIds: [3] });
-    expect(await controller.handle(request("browser.listTabs", {}))).toEqual([tab]);
-    expect(await controller.handle(request("browser.activeTab", {}))).toEqual(tab);
-    expect(await controller.handle(request("browser.openTab", { url: tab.url, active: false }))).toEqual(tab);
-    expect(await controller.handle(request("browser.openTab", {}))).toEqual(tab);
-    expect(await controller.handle(request("page.attach", { tabId: 3 }))).toEqual({ attached: true });
-    expect(await controller.handle(request("page.detach", { tabId: 3 }))).toEqual({ attached: false });
+    expect(await controller.handle(request("bridge.status", {}))).toEqual({
+      protocol: "1",
+      attachedTabIds: [3],
+    });
+    expect(await controller.handle(request("browser.listTabs", {}))).toEqual([
+      tab,
+    ]);
+    expect(await controller.handle(request("browser.activeTab", {}))).toEqual(
+      tab,
+    );
     expect(
       await controller.handle(
-        request("page.goto", { tabId: 3, url: tab.url, waitUntil: "domcontentloaded", timeoutMs: 2 }),
+        request("browser.openTab", { url: tab.url, active: false }),
+      ),
+    ).toEqual(tab);
+    expect(await controller.handle(request("browser.openTab", {}))).toEqual(
+      tab,
+    );
+    expect(
+      await controller.handle(request("page.attach", { tabId: 3 })),
+    ).toEqual({ attached: true });
+    expect(
+      await controller.handle(request("page.detach", { tabId: 3 })),
+    ).toEqual({ attached: false });
+    expect(
+      await controller.handle(
+        request("page.goto", {
+          tabId: 3,
+          url: tab.url,
+          waitUntil: "domcontentloaded",
+          timeoutMs: 2,
+        }),
       ),
     ).toEqual({ url: tab.url });
-    expect(await controller.handle(request("page.evaluate", { tabId: 3, expression: "arg", arg: 42 }))).toBe(42);
-    expect(await controller.handle(request("page.content", { tabId: 3, frameSelectors: [] }))).toBe("<html></html>");
     expect(
       await controller.handle(
-        request("page.screenshot", { tabId: 3, frameSelectors: [], format: "jpeg", quality: 80, fullPage: true }),
+        request("page.evaluate", { tabId: 3, expression: "arg", arg: 42 }),
+      ),
+    ).toBe(42);
+    expect(
+      await controller.handle(
+        request("page.content", { tabId: 3, frameSelectors: [] }),
+      ),
+    ).toBe("<html></html>");
+    expect(
+      await controller.handle(
+        request("page.screenshot", {
+          tabId: 3,
+          frameSelectors: [],
+          format: "jpeg",
+          quality: 80,
+          fullPage: true,
+        }),
       ),
     ).toBe("data");
     expect(
       await controller.handle(
-        request("locator.waitFor", { tabId: 3, locator, frameSelectors: [], state: "visible", timeoutMs: 2 }),
+        request("locator.waitFor", {
+          tabId: 3,
+          locator,
+          frameSelectors: [],
+          state: "visible",
+          timeoutMs: 2,
+        }),
       ),
     ).toEqual({ state: "visible" });
-    expect(await controller.handle(request("locator.click", { tabId: 3, locator, timeoutMs: 2 }))).toEqual({ clicked: true });
-    expect(await controller.handle(request("locator.fill", { tabId: 3, locator, value: "private" }))).toEqual({ filled: true });
-    expect(await controller.handle(request("locator.textContent", { tabId: 3, locator }))).toBe("hello");
+    expect(
+      await controller.handle(
+        request("locator.click", { tabId: 3, locator, timeoutMs: 2 }),
+      ),
+    ).toEqual({ clicked: true });
+    expect(
+      await controller.handle(
+        request("locator.fill", { tabId: 3, locator, value: "private" }),
+      ),
+    ).toEqual({ filled: true });
+    expect(
+      await controller.handle(
+        request("locator.textContent", { tabId: 3, locator }),
+      ),
+    ).toBe("hello");
     await controller.emergencyDisconnect();
 
     expect(tabs.requireWebTab).toHaveBeenCalledWith(3);

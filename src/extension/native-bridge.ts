@@ -1,9 +1,18 @@
-import { PROTOCOL_VERSION, type BridgeErrorCode, type BridgeResponse } from "../shared/protocol.js";
-import { ProtocolValidationError, parseBridgeRequest } from "../shared/validation.js";
+import {
+  PROTOCOL_VERSION,
+  type BridgeErrorCode,
+  type BridgeResponse,
+} from "../shared/protocol.js";
+import {
+  ProtocolValidationError,
+  parseBridgeRequest,
+} from "../shared/validation.js";
 import { ExtensionController } from "./controller.js";
 import { asBridgeFault } from "./errors.js";
 
-export type MessageEvent<T> = { addListener(listener: (message: T) => void): void };
+export type MessageEvent<T> = {
+  addListener(listener: (message: T) => void): void;
+};
 export type DisconnectEvent = { addListener(listener: () => void): void };
 
 export type NativePort = {
@@ -32,6 +41,7 @@ export class NativeBridge {
 
   start(): void {
     this.stopped = false;
+    if (this.port !== undefined || this.reconnectPending) return;
     this.connect();
   }
 
@@ -42,7 +52,6 @@ export class NativeBridge {
   }
 
   private connect(): void {
-    this.reconnectPending = false;
     if (this.stopped || this.port !== undefined) return;
     let port: NativePort;
     try {
@@ -63,7 +72,10 @@ export class NativeBridge {
   private scheduleReconnect(): void {
     if (this.stopped || this.reconnectPending) return;
     this.reconnectPending = true;
-    this.schedule(() => this.connect(), 1_000);
+    this.schedule(() => {
+      this.reconnectPending = false;
+      this.connect();
+    }, 1_000);
   }
 
   private async receive(port: NativePort, message: unknown): Promise<void> {
@@ -75,8 +87,15 @@ export class NativeBridge {
       this.post(port, { protocol: PROTOCOL_VERSION, id, ok: true, result });
     } catch (error) {
       const code: BridgeErrorCode =
-        error instanceof ProtocolValidationError ? error.code : asBridgeFault(error).code;
-      this.post(port, { protocol: PROTOCOL_VERSION, id, ok: false, error: { code } });
+        error instanceof ProtocolValidationError
+          ? error.code
+          : asBridgeFault(error).code;
+      this.post(port, {
+        protocol: PROTOCOL_VERSION,
+        id,
+        ok: false,
+        error: { code },
+      });
     }
   }
 

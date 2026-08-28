@@ -12,7 +12,10 @@ describe("Chrome Native Messaging framing", () => {
     const encoded = encodeNativeMessage({ protocol: "1", id: "one" });
 
     expect(encoded.readUInt32LE(0)).toBe(encoded.byteLength - 4);
-    expect(JSON.parse(encoded.subarray(4).toString("utf8"))).toEqual({ protocol: "1", id: "one" });
+    expect(JSON.parse(encoded.subarray(4).toString("utf8"))).toEqual({
+      protocol: "1",
+      id: "one",
+    });
   });
 
   it("decodes fragmented headers and payloads incrementally", () => {
@@ -26,7 +29,10 @@ describe("Chrome Native Messaging framing", () => {
   });
 
   it("decodes several frames from one chunk and accepts empty chunks", () => {
-    const frames = Buffer.concat([encodeNativeMessage(null), encodeNativeMessage([1, 2, 3])]);
+    const frames = Buffer.concat([
+      encodeNativeMessage(null),
+      encodeNativeMessage([1, 2, 3]),
+    ]);
     const decoder = new NativeMessageDecoder();
 
     expect(decoder.push(new Uint8Array())).toEqual([]);
@@ -47,9 +53,9 @@ describe("Chrome Native Messaging framing", () => {
   });
 
   it("enforces the one MiB payload limit while encoding", () => {
-    expect(() => encodeNativeMessage("x".repeat(MAX_NATIVE_MESSAGE_BYTES))).toThrowError(
-      expect.objectContaining({ code: "MESSAGE_TOO_LARGE" }),
-    );
+    expect(() =>
+      encodeNativeMessage("x".repeat(MAX_NATIVE_MESSAGE_BYTES)),
+    ).toThrowError(expect.objectContaining({ code: "MESSAGE_TOO_LARGE" }));
   });
 
   it("rejects zero and oversized declared lengths before reading payloads", () => {
@@ -72,11 +78,15 @@ describe("Chrome Native Messaging framing", () => {
     invalidPayload.copy(frame, 4);
     const decoder = new NativeMessageDecoder();
 
-    expect(() => decoder.push(frame)).toThrowError(expect.objectContaining({ code: "INVALID_JSON" }));
+    expect(() => decoder.push(frame)).toThrowError(
+      expect.objectContaining({ code: "INVALID_JSON" }),
+    );
     expect(() => decoder.push(encodeNativeMessage(null))).toThrowError(
       expect.objectContaining({ code: "DECODER_FAILED" }),
     );
-    expect(() => decoder.finish()).toThrowError(expect.objectContaining({ code: "DECODER_FAILED" }));
+    expect(() => decoder.finish()).toThrowError(
+      expect.objectContaining({ code: "DECODER_FAILED" }),
+    );
   });
 
   it("rejects a stream that ends during a header or payload", () => {

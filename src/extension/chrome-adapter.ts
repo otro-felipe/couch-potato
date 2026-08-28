@@ -29,7 +29,10 @@ export class ChromeTabAdapter implements TabAdapter {
   }
 
   async active(): Promise<SafeTab> {
-    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const tabs = await chrome.tabs.query({
+      active: true,
+      lastFocusedWindow: true,
+    });
     const safe = tabs[0] === undefined ? undefined : this.safeTab(tabs[0]);
     if (safe === undefined) throw new BridgeFault("TAB_NOT_FOUND");
     return safe;
@@ -55,7 +58,11 @@ export class ChromeTabAdapter implements TabAdapter {
     }
   }
 
-  private safeTab(tab: chrome.tabs.Tab, fallbackUrl?: string, allowTransient = false): SafeTab | undefined {
+  private safeTab(
+    tab: chrome.tabs.Tab,
+    fallbackUrl?: string,
+    allowTransient = false,
+  ): SafeTab | undefined {
     if (tab.id === undefined) return undefined;
     const url = tab.url ?? fallbackUrl;
     if (url === undefined) return undefined;
@@ -125,10 +132,18 @@ export class ChromeCdpTransport implements CdpTransport {
     return [...this.attached];
   }
 
-  async send(tabId: number, method: string, params: object = {}): Promise<unknown> {
+  async send(
+    tabId: number,
+    method: string,
+    params: object = {},
+  ): Promise<unknown> {
     if (!this.attached.has(tabId)) throw new BridgeFault("NOT_ATTACHED");
     try {
-      return await chrome.debugger.sendCommand({ tabId }, method, params as Record<string, unknown>);
+      return await chrome.debugger.sendCommand(
+        { tabId },
+        method,
+        params as Record<string, unknown>,
+      );
     } catch {
       throw new BridgeFault("CDP_ERROR");
     }

@@ -17,8 +17,9 @@ export class NativeMessageFramingError extends Error {
   }
 }
 
-const framingFailure = (code: NativeMessageFramingErrorCode): NativeMessageFramingError =>
-  new NativeMessageFramingError(code);
+const framingFailure = (
+  code: NativeMessageFramingErrorCode,
+): NativeMessageFramingError => new NativeMessageFramingError(code);
 
 export const encodeNativeMessage = (value: unknown): Buffer => {
   let json: string | undefined;
@@ -29,7 +30,8 @@ export const encodeNativeMessage = (value: unknown): Buffer => {
   }
   if (json === undefined) throw framingFailure("INVALID_JSON");
   const payload = Buffer.from(json, "utf8");
-  if (payload.byteLength > MAX_NATIVE_MESSAGE_BYTES) throw framingFailure("MESSAGE_TOO_LARGE");
+  if (payload.byteLength > MAX_NATIVE_MESSAGE_BYTES)
+    throw framingFailure("MESSAGE_TOO_LARGE");
   const frame = Buffer.allocUnsafe(4 + payload.byteLength);
   frame.writeUInt32LE(payload.byteLength, 0);
   payload.copy(frame, 4);
@@ -43,7 +45,8 @@ export class NativeMessageDecoder {
 
   push(chunk: Uint8Array): unknown[] {
     if (this.#failed) throw framingFailure("DECODER_FAILED");
-    if (chunk.byteLength > 0) this.#buffer = Buffer.concat([this.#buffer, Buffer.from(chunk)]);
+    if (chunk.byteLength > 0)
+      this.#buffer = Buffer.concat([this.#buffer, Buffer.from(chunk)]);
 
     const messages: unknown[] = [];
     try {
@@ -53,7 +56,8 @@ export class NativeMessageDecoder {
           const length = this.#buffer.readUInt32LE(0);
           this.#buffer = this.#buffer.subarray(4);
           if (length === 0) throw framingFailure("INVALID_LENGTH");
-          if (length > MAX_NATIVE_MESSAGE_BYTES) throw framingFailure("MESSAGE_TOO_LARGE");
+          if (length > MAX_NATIVE_MESSAGE_BYTES)
+            throw framingFailure("MESSAGE_TOO_LARGE");
           this.#expectedLength = length;
         }
 

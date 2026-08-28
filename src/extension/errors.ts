@@ -8,5 +8,7 @@ export class BridgeFault extends Error {
 }
 
 export function asBridgeFault(error: unknown): BridgeFault {
-  return error instanceof BridgeFault ? error : new BridgeFault("INTERNAL_ERROR");
+  return error instanceof BridgeFault
+    ? error
+    : new BridgeFault("INTERNAL_ERROR");
 }

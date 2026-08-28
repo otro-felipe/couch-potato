@@ -63,7 +63,11 @@ describe("the versioned bridge protocol", () => {
       protocol: "1",
       id: "click-1",
       method: "locator.click",
-      params: { tabId: 8, locator, frameSelectors: [{ type: "css", value: "iframe" }] },
+      params: {
+        tabId: 8,
+        locator,
+        frameSelectors: [{ type: "css", value: "iframe" }],
+      },
     };
     const success: BridgeSuccessResponse = {
       protocol: "1",
@@ -94,17 +98,64 @@ describe("request validation", () => {
     ["browser.openTab", { url: "https://example.test", active: false }],
     ["page.attach", { tabId: 1 }],
     ["page.detach", { tabId: 1 }],
-    ["page.goto", { tabId: 1, url: "https://example.test", waitUntil: "load", timeoutMs: 5_000 }],
-    ["page.evaluate", { tabId: 1, expression: "document.title", arg: { nested: [1, true, null] } }],
-    ["page.content", { tabId: 1, frameSelectors: [{ type: "text", value: "Account", exact: true }] }],
+    [
+      "page.goto",
+      {
+        tabId: 1,
+        url: "https://example.test",
+        waitUntil: "load",
+        timeoutMs: 5_000,
+      },
+    ],
+    [
+      "page.evaluate",
+      {
+        tabId: 1,
+        expression: "document.title",
+        arg: { nested: [1, true, null] },
+      },
+    ],
+    [
+      "page.content",
+      {
+        tabId: 1,
+        frameSelectors: [{ type: "text", value: "Account", exact: true }],
+      },
+    ],
     ["page.screenshot", { tabId: 1 }],
-    ["page.screenshot", { tabId: 1, format: "jpeg", quality: 80, fullPage: true }],
-    ["locator.waitFor", { tabId: 1, locator: { type: "css", value: "main" }, state: "hidden", timeoutMs: 1 }],
-    ["locator.click", { tabId: 1, locator: { type: "text", value: "Continue" }, timeoutMs: 0 }],
-    ["locator.fill", { tabId: 1, locator: { type: "role", role: "textbox", name: "Email", exact: false }, value: "private" }],
-    ["locator.textContent", { tabId: 1, locator: { type: "css", value: "h1" }, frameSelectors: [] }],
+    [
+      "page.screenshot",
+      { tabId: 1, format: "jpeg", quality: 80, fullPage: true },
+    ],
+    [
+      "locator.waitFor",
+      {
+        tabId: 1,
+        locator: { type: "css", value: "main" },
+        state: "hidden",
+        timeoutMs: 1,
+      },
+    ],
+    [
+      "locator.click",
+      { tabId: 1, locator: { type: "text", value: "Continue" }, timeoutMs: 0 },
+    ],
+    [
+      "locator.fill",
+      {
+        tabId: 1,
+        locator: { type: "role", role: "textbox", name: "Email", exact: false },
+        value: "private",
+      },
+    ],
+    [
+      "locator.textContent",
+      { tabId: 1, locator: { type: "css", value: "h1" }, frameSelectors: [] },
+    ],
   ])("accepts valid %s parameters", (method, params) => {
-    expect(parseBridgeRequest(request(method, params))).toEqual(request(method, params));
+    expect(parseBridgeRequest(request(method, params))).toEqual(
+      request(method, params),
+    );
   });
 
   it.each([
@@ -113,15 +164,21 @@ describe("request validation", () => {
     [{ ...request("bridge.status"), protocol: "2" }, "UNSUPPORTED_PROTOCOL"],
     [{ ...request("bridge.status"), id: "" }, "INVALID_REQUEST"],
     [{ ...request("bridge.status"), id: "x".repeat(129) }, "INVALID_REQUEST"],
-    [{ ...request("bridge.status"), method: "page.cookies" }, "METHOD_NOT_FOUND"],
+    [
+      { ...request("bridge.status"), method: "page.cookies" },
+      "METHOD_NOT_FOUND",
+    ],
     [{ ...request("bridge.status"), params: [] }, "INVALID_PARAMS"],
     [{ ...request("bridge.status"), params: new Date(0) }, "INVALID_PARAMS"],
     [{ ...request("bridge.status"), extra: true }, "INVALID_REQUEST"],
-  ])("rejects an invalid envelope without reflecting its content", (input, code) => {
-    expect(() => parseBridgeRequest(input)).toThrowError(
-      expect.objectContaining({ code }),
-    );
-  });
+  ])(
+    "rejects an invalid envelope without reflecting its content",
+    (input, code) => {
+      expect(() => parseBridgeRequest(input)).toThrowError(
+        expect.objectContaining({ code }),
+      );
+    },
+  );
 
   it.each([
     ["bridge.status", { unexpected: true }],
@@ -132,7 +189,10 @@ describe("request validation", () => {
     ["page.attach", { tabId: 0 }],
     ["page.detach", { tabId: 1.5 }],
     ["page.goto", { tabId: 1, url: "file:///private/file" }],
-    ["page.goto", { tabId: 1, url: "https://example.test", waitUntil: "sometimes" }],
+    [
+      "page.goto",
+      { tabId: 1, url: "https://example.test", waitUntil: "sometimes" },
+    ],
     ["page.goto", { tabId: 1, url: "https://example.test", timeoutMs: -1 }],
     ["page.evaluate", { tabId: 1, expression: "" }],
     ["page.evaluate", { tabId: 1, expression: "1", arg: undefined }],
@@ -141,20 +201,69 @@ describe("request validation", () => {
     ["page.screenshot", { tabId: 1, format: "gif" }],
     ["page.screenshot", { tabId: 1, format: "png", quality: 80 }],
     ["page.screenshot", { tabId: 1, format: "jpeg", quality: 101 }],
-    ["locator.waitFor", { tabId: 1, locator: { type: "css", value: "main" }, state: "gone" }],
-    ["locator.click", { tabId: 1, locator: { type: "xpath", value: "//main" } }],
+    [
+      "locator.waitFor",
+      { tabId: 1, locator: { type: "css", value: "main" }, state: "gone" },
+    ],
+    [
+      "locator.click",
+      { tabId: 1, locator: { type: "xpath", value: "//main" } },
+    ],
     ["locator.click", { tabId: 1, locator: {} }],
     ["locator.click", { tabId: 1, locator: { type: "text", value: "" } }],
-    ["locator.click", { tabId: 1, locator: { type: "text", value: "x", exact: "yes" } }],
-    ["locator.fill", { tabId: 1, locator: { type: "role", role: "", name: "Email" }, value: "x" }],
-    ["locator.fill", { tabId: 1, locator: { type: "role", role: "textbox", name: 5 }, value: "x" }],
-    ["locator.fill", { tabId: 1, locator: { type: "role", role: "textbox", exact: true }, value: "x" }],
-    ["locator.fill", { tabId: 1, locator: { type: "css", value: "input", extra: true }, value: "x" }],
-    ["locator.fill", { tabId: 1, locator: { type: "css", value: "input" }, value: 5 }],
-    ["locator.textContent", { tabId: 1, locator: { type: "css", value: "h1" }, frameSelectors: [{ type: "css", value: "" }] }],
+    [
+      "locator.click",
+      { tabId: 1, locator: { type: "text", value: "x", exact: "yes" } },
+    ],
+    [
+      "locator.fill",
+      {
+        tabId: 1,
+        locator: { type: "role", role: "", name: "Email" },
+        value: "x",
+      },
+    ],
+    [
+      "locator.fill",
+      {
+        tabId: 1,
+        locator: { type: "role", role: "textbox", name: 5 },
+        value: "x",
+      },
+    ],
+    [
+      "locator.fill",
+      {
+        tabId: 1,
+        locator: { type: "role", role: "textbox", exact: true },
+        value: "x",
+      },
+    ],
+    [
+      "locator.fill",
+      {
+        tabId: 1,
+        locator: { type: "css", value: "input", extra: true },
+        value: "x",
+      },
+    ],
+    [
+      "locator.fill",
+      { tabId: 1, locator: { type: "css", value: "input" }, value: 5 },
+    ],
+    [
+      "locator.textContent",
+      {
+        tabId: 1,
+        locator: { type: "css", value: "h1" },
+        frameSelectors: [{ type: "css", value: "" }],
+      },
+    ],
   ])("rejects invalid %s parameters", (method, params) => {
     expect(() => parseBridgeRequest(request(method, params))).toThrowError(
-      expect.objectContaining<Partial<ProtocolValidationError>>({ code: "INVALID_PARAMS" }),
+      expect.objectContaining<Partial<ProtocolValidationError>>({
+        code: "INVALID_PARAMS",
+      }),
     );
   });
 
@@ -163,7 +272,13 @@ describe("request validation", () => {
     cyclic.self = cyclic;
 
     expect(() =>
-      parseBridgeRequest(request("page.evaluate", { tabId: 1, expression: "value", arg: cyclic })),
+      parseBridgeRequest(
+        request("page.evaluate", {
+          tabId: 1,
+          expression: "value",
+          arg: cyclic,
+        }),
+      ),
     ).toThrowError(expect.objectContaining({ code: "INVALID_PARAMS" }));
   });
 });
@@ -171,14 +286,43 @@ describe("request validation", () => {
 describe("response validation", () => {
   it.each([
     [null, "INVALID_REQUEST"],
-    [{ protocol: "2", id: "r", ok: true, result: null }, "UNSUPPORTED_PROTOCOL"],
+    [
+      { protocol: "2", id: "r", ok: true, result: null },
+      "UNSUPPORTED_PROTOCOL",
+    ],
     [{ protocol: "1", id: "", ok: true, result: null }, "INVALID_REQUEST"],
     [{ protocol: "1", id: "r", ok: true }, "INVALID_REQUEST"],
-    [{ protocol: "1", id: "r", ok: true, result: undefined }, "INVALID_REQUEST"],
-    [{ protocol: "1", id: "r", ok: true, result: new Date(0) }, "INVALID_REQUEST"],
-    [{ protocol: "1", id: "r", ok: false, error: { code: "NOPE" } }, "INVALID_REQUEST"],
-    [{ protocol: "1", id: "r", ok: false, error: { code: "TIMEOUT", message: "reflected content" } }, "INVALID_REQUEST"],
-    [{ protocol: "1", id: "r", ok: false, error: { code: "TIMEOUT" }, result: null }, "INVALID_REQUEST"],
+    [
+      { protocol: "1", id: "r", ok: true, result: undefined },
+      "INVALID_REQUEST",
+    ],
+    [
+      { protocol: "1", id: "r", ok: true, result: new Date(0) },
+      "INVALID_REQUEST",
+    ],
+    [
+      { protocol: "1", id: "r", ok: false, error: { code: "NOPE" } },
+      "INVALID_REQUEST",
+    ],
+    [
+      {
+        protocol: "1",
+        id: "r",
+        ok: false,
+        error: { code: "TIMEOUT", message: "reflected content" },
+      },
+      "INVALID_REQUEST",
+    ],
+    [
+      {
+        protocol: "1",
+        id: "r",
+        ok: false,
+        error: { code: "TIMEOUT" },
+        result: null,
+      },
+      "INVALID_REQUEST",
+    ],
   ])("rejects invalid responses", (input, code) => {
     expect(() => parseBridgeResponse(input)).toThrowError(
       expect.objectContaining({ code }),
@@ -191,7 +335,9 @@ describe("response validation", () => {
       throw new Error("expected validation to fail");
     } catch (error) {
       expect(error).toBeInstanceOf(ProtocolValidationError);
-      expect((error as Error).message).toBe("Bridge protocol validation failed");
+      expect((error as Error).message).toBe(
+        "Bridge protocol validation failed",
+      );
       expect((error as Error).message).not.toContain("must-not-be-reflected");
     }
   });

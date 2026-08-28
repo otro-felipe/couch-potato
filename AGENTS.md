@@ -7,7 +7,6 @@
 - Native Messaging stdout is protocol-only. Diagnostics go to stderr and must remain secret-safe.
 - Restrict the local IPC endpoint to the current macOS user and clean stale sockets safely.
 - Keep controllers thin. CDP transport, locator resolution, native framing, IPC routing, client API, installation, and UI belong in separate modules.
-- Do not copy Forger source code or depend on Forger at runtime. Couch Potato is an independent implementation.
+- Keep Couch Potato independent: do not copy code from another extension or add runtime dependencies on unrelated products.
 - The unpacked extension is the supported distribution model. Do not add Chrome Web Store publication workflows.
 - Node runs natively on macOS for production. Docker may be used only for portable tests and build checks.
-

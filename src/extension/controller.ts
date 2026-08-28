@@ -1,4 +1,8 @@
-import { PROTOCOL_VERSION, type BridgeRequest, type JsonValue } from "../shared/protocol.js";
+import {
+  PROTOCOL_VERSION,
+  type BridgeRequest,
+  type JsonValue,
+} from "../shared/protocol.js";
 import type { TabAdapter } from "./chrome-adapter.js";
 import { CdpPageService } from "./page-service.js";
 import { requireWebUrl } from "./security.js";
@@ -18,7 +22,10 @@ export class ExtensionController {
       case "browser.activeTab":
         return await this.tabs.active();
       case "browser.openTab": {
-        const url = request.params.url === undefined ? undefined : requireWebUrl(request.params.url);
+        const url =
+          request.params.url === undefined
+            ? undefined
+            : requireWebUrl(request.params.url);
         return await this.tabs.open(url, request.params.active);
       }
       case "page.attach":
@@ -34,9 +41,16 @@ export class ExtensionController {
           request.params.timeoutMs,
         );
       case "page.evaluate":
-        return await this.pages.evaluate(request.params.tabId, request.params.expression, request.params.arg);
+        return await this.pages.evaluate(
+          request.params.tabId,
+          request.params.expression,
+          request.params.arg,
+        );
       case "page.content":
-        return await this.pages.content(request.params.tabId, request.params.frameSelectors);
+        return await this.pages.content(
+          request.params.tabId,
+          request.params.frameSelectors,
+        );
       case "page.screenshot":
         return await this.pages.screenshot(
           request.params.tabId,

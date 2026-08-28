@@ -11,18 +11,20 @@ const bridge = new NativeBridge(chrome.runtime, controller);
 
 bridge.start();
 
-chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
-  if (
-    typeof message !== "object" ||
-    message === null ||
-    !("type" in message) ||
-    message.type !== "emergency-disconnect"
-  ) {
-    return false;
-  }
-  void controller.emergencyDisconnect().then(
-    () => sendResponse({ ok: true }),
-    () => sendResponse({ ok: false }),
-  );
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  (message: unknown, _sender, sendResponse) => {
+    if (
+      typeof message !== "object" ||
+      message === null ||
+      !("type" in message) ||
+      message.type !== "emergency-disconnect"
+    ) {
+      return false;
+    }
+    void controller.emergencyDisconnect().then(
+      () => sendResponse({ ok: true }),
+      () => sendResponse({ ok: false }),
+    );
+    return true;
+  },
+);

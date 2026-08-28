@@ -36,7 +36,8 @@ export const BRIDGE_ERROR_CODES = [
 export type BridgeErrorCode = (typeof BRIDGE_ERROR_CODES)[number];
 
 export type JsonPrimitive = string | number | boolean | null;
-export type JsonValue = JsonPrimitive | readonly JsonValue[] | { readonly [key: string]: JsonValue };
+export type JsonValue =
+  JsonPrimitive | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
 export type CssLocator = Readonly<{
   type: "css";
@@ -103,14 +104,15 @@ export interface BridgeParamsByMethod {
   "locator.textContent": LocatorParams;
 }
 
-export type BridgeRequest<M extends BridgeMethod = BridgeMethod> = M extends BridgeMethod
-  ? Readonly<{
-      protocol: typeof PROTOCOL_VERSION;
-      id: string;
-      method: M;
-      params: BridgeParamsByMethod[M];
-    }>
-  : never;
+export type BridgeRequest<M extends BridgeMethod = BridgeMethod> =
+  M extends BridgeMethod
+    ? Readonly<{
+        protocol: typeof PROTOCOL_VERSION;
+        id: string;
+        method: M;
+        params: BridgeParamsByMethod[M];
+      }>
+    : never;
 
 export type BridgeSuccessResponse = Readonly<{
   protocol: typeof PROTOCOL_VERSION;
