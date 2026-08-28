@@ -57,6 +57,9 @@ Frame locators are represented as an ordered list of those locator values. The
 extension resolves each iframe before resolving the final locator.
 `activate()` repeats that resolution in the final top-level or isolated frame context,
 requires a connected `HTMLElement`, and returns only an allowlisted boolean result.
+`fill()` uses the same fresh frame resolution, accepts only connected HTML inputs and
+textareas, applies the appropriate native value setter, and emits framework-compatible
+`input` and `change` events without returning field content.
 
 ## Deliberate limits
 

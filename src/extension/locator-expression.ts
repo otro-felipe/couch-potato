@@ -75,3 +75,8 @@ export function locatorProbeExpression(locator: Locator): string {
 export function locatorActivationExpression(locator: Locator): string {
   return `(() => { ${resolverSource} const element = locate(${serialized(locator)}); if (!(element instanceof HTMLElement) || !element.isConnected) return false; element.click(); return true; })()`;
 }
+
+export function locatorFillExpression(locator: Locator, value: string): string {
+  const serializedValue = JSON.stringify(value).replaceAll("<", "\\u003c");
+  return `(() => { ${resolverSource} const element = locate(${serialized(locator)}); if (!element?.isConnected || (!(element instanceof HTMLInputElement) && !(element instanceof HTMLTextAreaElement))) return false; const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set; if (typeof setter !== "function") return false; element.focus(); setter.call(element, ${serializedValue}); element.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, data: ${serializedValue}, inputType: "insertText" })); element.dispatchEvent(new Event("change", { bubbles: true, composed: true })); return true; })()`;
+}

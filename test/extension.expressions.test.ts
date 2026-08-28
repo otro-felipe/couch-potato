@@ -4,6 +4,7 @@ import { runInNewContext } from "node:vm";
 import { BridgeFault, asBridgeFault } from "../src/extension/errors.js";
 import {
   locatorActivationExpression,
+  locatorFillExpression,
   locatorObjectExpression,
   locatorProbeExpression,
 } from "../src/extension/locator-expression.js";
@@ -121,6 +122,106 @@ describe("locator expressions", () => {
     expect(
       locatorActivationExpression({ type: "css", value: ".action" }),
     ).not.toContain("text: element.textContent");
+  });
+
+  it.each(["input", "textarea"] as const)(
+    "fills a connected %s through its native setter and framework events",
+    (kind) => {
+      const writes: string[] = [];
+      const events: Array<Record<string, unknown>> = [];
+      let focuses = 0;
+      class FakeEvent {
+        constructor(
+          readonly type: string,
+          options: Record<string, unknown>,
+        ) {
+          Object.assign(this, options);
+        }
+      }
+      class FakeInputEvent extends FakeEvent {}
+      class FakeField {
+        isConnected = true;
+        focus(): void {
+          focuses += 1;
+        }
+        dispatchEvent(event: Record<string, unknown>): boolean {
+          events.push(event);
+          return true;
+        }
+      }
+      class FakeInput extends FakeField {
+        set value(value: string) {
+          writes.push(value);
+        }
+      }
+      class FakeTextarea extends FakeField {
+        set value(value: string) {
+          writes.push(value);
+        }
+      }
+      const element = kind === "input" ? new FakeInput() : new FakeTextarea();
+      const result = runInNewContext(
+        locatorFillExpression(
+          { type: "css", value: ".field" },
+          "replacement<value>",
+        ),
+        {
+          document: { querySelector: () => element },
+          HTMLInputElement: FakeInput,
+          HTMLTextAreaElement: FakeTextarea,
+          InputEvent: FakeInputEvent,
+          Event: FakeEvent,
+        },
+      );
+
+      expect(result).toBe(true);
+      expect(writes).toEqual(["replacement<value>"]);
+      expect(focuses).toBe(1);
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: "input",
+          bubbles: true,
+          composed: true,
+          data: "replacement<value>",
+          inputType: "insertText",
+        }),
+        expect.objectContaining({
+          type: "change",
+          bubbles: true,
+          composed: true,
+        }),
+      ]);
+    },
+  );
+
+  it("rejects disconnected, unsupported, or setter-less fill targets", () => {
+    class FakeInput {
+      isConnected = true;
+      focus(): void {}
+      dispatchEvent(): boolean {
+        return true;
+      }
+    }
+    class FakeTextarea extends FakeInput {}
+    const expression = locatorFillExpression(
+      { type: "css", value: ".field" },
+      "replacement",
+    );
+    const run = (element: object | null) =>
+      runInNewContext(expression, {
+        document: { querySelector: () => element },
+        HTMLInputElement: FakeInput,
+        HTMLTextAreaElement: FakeTextarea,
+        InputEvent: class {},
+        Event: class {},
+      });
+    const disconnected = new FakeInput();
+    disconnected.isConnected = false;
+
+    expect(run(disconnected)).toBe(false);
+    expect(run({ isConnected: true })).toBe(false);
+    expect(run(new FakeInput())).toBe(false);
+    expect(run(null)).toBe(false);
   });
 });
 

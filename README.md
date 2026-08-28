@@ -128,7 +128,9 @@ await frame.getByRole("button", { name: "Pay" }).click();
 ```
 
 CSS, text, and role locators can be nested through multiple frame locators. `click()`
-and text input are dispatched through the Chrome DevTools Protocol Input domain.
+is dispatched through the Chrome DevTools Protocol Input domain. `fill()` resolves a
+connected input or textarea inside its final frame, applies its native value setter,
+and dispatches bubbling, composed `input` and `change` events for controlled fields.
 `activate()` is the explicit semantic alternative: after resolving the locator again
 inside its final frame, it accepts only a connected `HTMLElement` and invokes that
 element's DOM `click()` method. It does not replace the physical-click default.

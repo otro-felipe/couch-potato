@@ -703,7 +703,7 @@ describe("CDP page service", () => {
     }
   });
 
-  it("clicks and fills through CDP Input, and returns text", async () => {
+  it("keeps physical clicks, fills semantically, and returns text", async () => {
     const cdp = new FakeCdp();
     const page = new CdpPageService(cdp, async () => undefined);
     await page.attach(9);
@@ -712,26 +712,33 @@ describe("CDP page service", () => {
       found(),
       found(),
       found(),
-      found(),
+      { result: { value: true } },
       found({ text: " Saldo " }),
       found({ text: " Saldo " }),
     );
 
     await page.click(9, css("button"), [], 0);
-    await page.fill(9, css("input"), [], "secret-value", 0);
+    await page.fill(9, css("input"), [], "replacement", 0);
     await expect(page.textContent(9, css(".balance"), [], 0)).resolves.toBe(
       " Saldo ",
     );
 
     expect(
       cdp.calls.filter(({ method }) => method === "Input.dispatchMouseEvent"),
-    ).toHaveLength(6);
+    ).toHaveLength(3);
     expect(
       cdp.calls.filter(({ method }) => method === "Input.dispatchKeyEvent"),
-    ).toHaveLength(4);
+    ).toHaveLength(0);
     expect(
-      cdp.calls.find(({ method }) => method === "Input.insertText")?.params,
-    ).toEqual({ text: "secret-value" });
+      cdp.calls.filter(({ method }) => method === "Input.insertText"),
+    ).toHaveLength(0);
+    const fillEvaluation = cdp.calls.filter(
+      ({ method }) => method === "Runtime.evaluate",
+    )[3];
+    expect(fillEvaluation?.params).toMatchObject({ returnByValue: true });
+    expect(
+      String((fillEvaluation?.params as Record<string, unknown>).expression),
+    ).toContain("HTMLInputElement.prototype");
   });
 
   it("activates a freshly resolved top-level HTMLElement without CDP Input", async () => {
@@ -831,6 +838,82 @@ describe("CDP page service", () => {
 
     await expect(
       page.activate(30, css(".changing"), [], 0),
+    ).rejects.toMatchObject({ code: "LOCATOR_NOT_FOUND" });
+  });
+
+  it("fills through a nested OOPIF in its freshly resolved isolated world", async () => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    await page.attach(31);
+    cdp.enqueue(
+      "Runtime.evaluate",
+      { result: { objectId: "outer-fill-one" } },
+      { result: { objectId: "inner-fill-one" } },
+      found(),
+      { result: { objectId: "outer-fill-two" } },
+      { result: { objectId: "inner-fill-two" } },
+      { result: { value: true } },
+    );
+    cdp.enqueue(
+      "DOM.describeNode",
+      { node: { frameId: "outer" } },
+      { node: { backendNodeId: 333 } },
+      { node: { frameId: "outer" } },
+      { node: { backendNodeId: 333 } },
+    );
+    const frameTree = {
+      frameTree: {
+        frame: { id: "top" },
+        childFrames: [
+          {
+            frame: { id: "outer", parentId: "top" },
+            childFrames: [
+              { frame: { id: "inner-sibling", parentId: "outer" } },
+              { frame: { id: "inner-fill", parentId: "outer" } },
+            ],
+          },
+        ],
+      },
+    };
+    cdp.enqueue("Page.getFrameTree", frameTree, frameTree);
+    cdp.enqueue(
+      "DOM.getFrameOwner",
+      { backendNodeId: 111 },
+      { backendNodeId: 333 },
+      { backendNodeId: 111 },
+      { backendNodeId: 333 },
+    );
+    cdp.enqueue(
+      "Page.createIsolatedWorld",
+      { executionContextId: 81 },
+      { executionContextId: 82 },
+      { executionContextId: 83 },
+      { executionContextId: 84 },
+    );
+
+    await expect(
+      page.fill(
+        31,
+        css(".field"),
+        [css("iframe.outer"), css("iframe.inner")],
+        "replacement",
+        0,
+      ),
+    ).resolves.toEqual({ filled: true });
+    expect(cdp.calls.at(-1)?.params).toMatchObject({
+      contextId: 84,
+      returnByValue: true,
+    });
+  });
+
+  it("rejects fill when the freshly resolved target is invalid or disconnected", async () => {
+    const cdp = new FakeCdp();
+    const page = new CdpPageService(cdp, async () => undefined);
+    await page.attach(32);
+    cdp.enqueue("Runtime.evaluate", found(), { result: { value: false } });
+
+    await expect(
+      page.fill(32, css(".changing"), [], "replacement", 0),
     ).rejects.toMatchObject({ code: "LOCATOR_NOT_FOUND" });
   });
 

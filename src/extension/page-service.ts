@@ -7,6 +7,7 @@ import { BridgeFault } from "./errors.js";
 import {
   locatorActivationExpression,
   locatorBoxExpression,
+  locatorFillExpression,
   locatorObjectExpression,
   locatorProbeExpression,
 } from "./locator-expression.js";
@@ -315,20 +316,16 @@ export class CdpPageService {
     value: string,
     timeoutMs = 30_000,
   ): Promise<{ filled: true }> {
-    const point = await this.visiblePoint(
+    await this.waitFor(tabId, locator, frameSelectors, "attached", timeoutMs);
+    const context = await this.resolveFrame(tabId, frameSelectors, false);
+    const response = await this.evaluateInContext(
       tabId,
-      locator,
-      frameSelectors,
-      timeoutMs,
+      locatorFillExpression(locator, value),
+      context.contextId,
+      true,
     );
-    await this.mouse(tabId, "mouseMoved", point.x, point.y);
-    await this.mouse(tabId, "mousePressed", point.x, point.y, 1);
-    await this.mouse(tabId, "mouseReleased", point.x, point.y, 1);
-    await this.key(tabId, "rawKeyDown", "a", "KeyA", 4);
-    await this.key(tabId, "keyUp", "a", "KeyA", 4);
-    await this.key(tabId, "rawKeyDown", "Backspace", "Backspace", 0);
-    await this.key(tabId, "keyUp", "Backspace", "Backspace", 0);
-    await this.send(tabId, "Input.insertText", { text: value });
+    if (resultValue(response) !== true)
+      throw new BridgeFault("LOCATOR_NOT_FOUND");
     return { filled: true };
   }
 
@@ -587,20 +584,5 @@ export class CdpPageService {
     const params: Record<string, unknown> = { type, x, y, button: "left" };
     if (clickCount !== undefined) params.clickCount = clickCount;
     await this.send(tabId, "Input.dispatchMouseEvent", params);
-  }
-
-  private async key(
-    tabId: number,
-    type: string,
-    key: string,
-    code: string,
-    modifiers: number,
-  ): Promise<void> {
-    await this.send(tabId, "Input.dispatchKeyEvent", {
-      type,
-      key,
-      code,
-      modifiers,
-    });
   }
 }
