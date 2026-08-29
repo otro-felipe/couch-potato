@@ -49,22 +49,32 @@ describe("Chrome tab adapter", () => {
   });
 
   it("opens a safe explicit page or a transient blank tab", async () => {
-    const create = vi.fn(async ({ url, active }) => ({
-      id: 5,
+    let tabId = 4;
+    const create = vi.fn(async ({ active }) => ({
+      id: (tabId += 1),
       windowId: 1,
       active,
-      url,
+      url: "chrome://newtab/",
     }));
-    installChrome({ tabs: { create } });
+    const remove = vi.fn(async () => undefined);
+    installChrome({ tabs: { create, remove } });
     const adapter = new ChromeTabAdapter();
     await expect(
       adapter.open("https://example.test", false),
-    ).resolves.toMatchObject({ id: 5, active: false });
+    ).resolves.toMatchObject({
+      id: 5,
+      active: false,
+      url: "https://example.test",
+    });
     await expect(adapter.open()).resolves.toMatchObject({
+      id: 6,
       url: "about:blank",
       active: true,
     });
+    await adapter.close(5);
+    await adapter.close(6);
     expect(create).toHaveBeenCalledTimes(2);
+    expect(remove.mock.calls).toEqual([[5], [6]]);
   });
 
   it("closes exactly an owned tab once and treats repeated close as idempotent", async () => {
@@ -177,7 +187,7 @@ describe("Chrome tab adapter", () => {
       });
     installChrome({ tabs: { get } });
     const pending = new ChromeTabAdapter().requireWebTab(9);
-    await vi.advanceTimersByTimeAsync(25);
+    await vi.advanceTimersByTimeAsync(50);
     await expect(pending).resolves.toMatchObject({ id: 9 });
     vi.useRealTimers();
   });
@@ -211,8 +221,56 @@ describe("Chrome tab adapter", () => {
     ).resolves.toMatchObject({ id: 10, url: "https://example.test" });
 
     expect(get).toHaveBeenCalledTimes(3);
-    expect(delay).toHaveBeenNthCalledWith(1, 25);
-    expect(delay).toHaveBeenNthCalledWith(2, 25);
+    expect(delay).toHaveBeenNthCalledWith(1, 50);
+    expect(delay).toHaveBeenNthCalledWith(2, 50);
+  });
+
+  it("keeps retrying TAB_NOT_FOUND through a one-second tab creation race", async () => {
+    const transient = {
+      id: 12,
+      active: false,
+      windowId: 1,
+      url: "about:blank",
+    };
+    const get = vi.fn();
+    for (let attempt = 0; attempt < 20; attempt += 1)
+      get.mockResolvedValueOnce(transient);
+    get.mockResolvedValueOnce({
+      id: 12,
+      active: false,
+      windowId: 1,
+      url: "https://example.test",
+    });
+    const delay = vi.fn(async () => undefined);
+    installChrome({ tabs: { get } });
+
+    await expect(
+      new ChromeTabAdapter(delay).requireWebTab(12),
+    ).resolves.toMatchObject({ id: 12, url: "https://example.test" });
+    expect(get).toHaveBeenCalledTimes(21);
+    expect(delay).toHaveBeenCalledTimes(20);
+  });
+
+  it("bounds persistent TAB_NOT_FOUND retries to four seconds", async () => {
+    vi.useFakeTimers();
+    const get = vi.fn(async () => ({
+      id: 13,
+      active: false,
+      windowId: 1,
+      url: "about:blank",
+    }));
+    installChrome({ tabs: { get } });
+    const pending = new ChromeTabAdapter().requireWebTab(13);
+    const rejected = expect(pending).rejects.toMatchObject({
+      code: "TAB_NOT_FOUND",
+    });
+
+    await vi.advanceTimersByTimeAsync(3_999);
+    expect(get).toHaveBeenCalledTimes(80);
+    await vi.advanceTimersByTimeAsync(1);
+    await rejected;
+    expect(get).toHaveBeenCalledTimes(81);
+    vi.useRealTimers();
   });
 
   it("does not retry a bridge failure other than TAB_NOT_FOUND", async () => {

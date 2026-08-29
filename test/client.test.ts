@@ -282,6 +282,39 @@ describe("Playwright-like client", () => {
     );
     browser.close();
   });
+
+  it.each([false, true])(
+    "closes a newly opened tab when attach fails, cleanup failure: %s",
+    async (cleanupFails) => {
+      const calls: any[] = [];
+      const socketPath = await bridge((request) => {
+        calls.push(request);
+        if (request.method === "browser.openTab")
+          return {
+            ok: true,
+            result: { id: 13, title: "", url: "https://example.test" },
+          };
+        if (request.method === "page.attach")
+          return { ok: false, error: { code: "TAB_NOT_FOUND" } };
+        if (request.method === "page.close" && cleanupFails)
+          return { ok: false, error: { code: "INTERNAL_ERROR" } };
+        return { ok: true, result: null };
+      });
+      const browser = await connect({ socketPath });
+      try {
+        await expect(
+          browser.openPage("https://example.test"),
+        ).rejects.toMatchObject({ code: "TAB_NOT_FOUND" });
+        expect(calls.map(({ method }) => method)).toEqual([
+          "browser.openTab",
+          "page.attach",
+          "page.close",
+        ]);
+      } finally {
+        browser.close();
+      }
+    },
+  );
   it("validates status, tab and screenshot result shapes", async () => {
     for (const result of [
       null,

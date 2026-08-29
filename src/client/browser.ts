@@ -83,9 +83,19 @@ export class Browser {
   ): Promise<Page> {
     const params: Record<string, unknown> = { ...options };
     if (url !== undefined) params.url = url;
-    return this.attach(
-      parseTab(await this.transport.request("browser.openTab", params)),
+    const info = parseTab(
+      await this.transport.request("browser.openTab", params),
     );
+    try {
+      return await this.attach(info);
+    } catch (error) {
+      try {
+        await this.transport.request("page.close", { tabId: info.tabId });
+      } catch {
+        // Preserve the attachment failure after best-effort owned-tab cleanup.
+      }
+      throw error;
+    }
   }
   async detachAll(): Promise<void> {
     const status = await this.status();

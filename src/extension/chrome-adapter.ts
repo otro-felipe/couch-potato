@@ -4,6 +4,9 @@ import { BridgeFault } from "./errors.js";
 import type { CdpTransport } from "./page-service.js";
 import { requireWebUrl } from "./security.js";
 
+const WEB_TAB_READINESS_ATTEMPTS = 81;
+const WEB_TAB_READINESS_DELAY_MS = 50;
+
 export type SafeTab = {
   id: number;
   active: boolean;
@@ -73,7 +76,7 @@ export class ChromeTabAdapter implements TabAdapter {
   }
 
   async requireWebTab(tabId: number): Promise<SafeTab> {
-    return this.requireWebTabWithRetries(tabId, 10);
+    return this.requireWebTabWithRetries(tabId, WEB_TAB_READINESS_ATTEMPTS);
   }
 
   private async requireWebTabWithRetries(
@@ -90,7 +93,7 @@ export class ChromeTabAdapter implements TabAdapter {
         error instanceof BridgeFault ? error : new BridgeFault("TAB_NOT_FOUND");
       if (fault.code !== "TAB_NOT_FOUND") throw fault;
       if (attemptsLeft === 1) throw fault;
-      await this.delay(25);
+      await this.delay(WEB_TAB_READINESS_DELAY_MS);
       return this.requireWebTabWithRetries(tabId, attemptsLeft - 1);
     }
   }
@@ -101,14 +104,14 @@ export class ChromeTabAdapter implements TabAdapter {
     allowTransient = false,
   ): SafeTab | undefined {
     if (tab.id === undefined) return undefined;
-    const url = tab.url ?? fallbackUrl;
+    let url = tab.url ?? fallbackUrl;
     if (url === undefined) return undefined;
-    if (!(allowTransient && url === "about:blank")) {
-      try {
-        requireWebUrl(url);
-      } catch {
-        return undefined;
-      }
+    try {
+      requireWebUrl(url);
+    } catch {
+      if (!allowTransient || fallbackUrl === undefined) return undefined;
+      // open() supplies either about:blank or a target already validated by requireWebUrl().
+      url = fallbackUrl;
     }
     return {
       id: tab.id,
