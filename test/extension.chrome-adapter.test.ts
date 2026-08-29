@@ -4,6 +4,7 @@ import {
   ChromeCdpTransport,
   ChromeTabAdapter,
 } from "../src/extension/chrome-adapter.js";
+import { BridgeFault } from "../src/extension/errors.js";
 
 type Listener<T> = (value: T) => void;
 
@@ -179,6 +180,52 @@ describe("Chrome tab adapter", () => {
     await vi.advanceTimersByTimeAsync(25);
     await expect(pending).resolves.toMatchObject({ id: 9 });
     vi.useRealTimers();
+  });
+
+  it("retries transient TAB_NOT_FOUND states while a created tab becomes controllable", async () => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: 10,
+        active: false,
+        windowId: 1,
+        url: "about:blank",
+      })
+      .mockResolvedValueOnce({
+        id: 10,
+        active: false,
+        windowId: 1,
+        url: "chrome://newtab/",
+      })
+      .mockResolvedValueOnce({
+        id: 10,
+        active: false,
+        windowId: 1,
+        url: "https://example.test",
+      });
+    const delay = vi.fn(async () => undefined);
+    installChrome({ tabs: { get } });
+
+    await expect(
+      new ChromeTabAdapter(delay).requireWebTab(10),
+    ).resolves.toMatchObject({ id: 10, url: "https://example.test" });
+
+    expect(get).toHaveBeenCalledTimes(3);
+    expect(delay).toHaveBeenNthCalledWith(1, 25);
+    expect(delay).toHaveBeenNthCalledWith(2, 25);
+  });
+
+  it("does not retry a bridge failure other than TAB_NOT_FOUND", async () => {
+    const fault = new BridgeFault("INTERNAL_ERROR");
+    const get = vi.fn().mockRejectedValue(fault);
+    const delay = vi.fn(async () => undefined);
+    installChrome({ tabs: { get } });
+
+    await expect(new ChromeTabAdapter(delay).requireWebTab(11)).rejects.toBe(
+      fault,
+    );
+    expect(get).toHaveBeenCalledOnce();
+    expect(delay).not.toHaveBeenCalled();
   });
 });
 

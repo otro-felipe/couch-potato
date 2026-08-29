@@ -86,8 +86,10 @@ export class ChromeTabAdapter implements TabAdapter {
       if (safe === undefined) throw new BridgeFault("TAB_NOT_FOUND");
       return safe;
     } catch (error) {
-      if (error instanceof BridgeFault) throw error;
-      if (attemptsLeft === 1) throw new BridgeFault("TAB_NOT_FOUND");
+      const fault =
+        error instanceof BridgeFault ? error : new BridgeFault("TAB_NOT_FOUND");
+      if (fault.code !== "TAB_NOT_FOUND") throw fault;
+      if (attemptsLeft === 1) throw fault;
       await this.delay(25);
       return this.requireWebTabWithRetries(tabId, attemptsLeft - 1);
     }
